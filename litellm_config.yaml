@@ -1,0 +1,15 @@
+model_list:
+  - model_name: qwen3.5-2b@q4_k_m
+    litellm_params:
+      model: openai/qwen3.5-2b@q4_k_m
+      api_base: http://127.0.0.1:1234/v1
+      api_key: lm-studio
+
+  - model_name: text-embedding-bge-m3@fp16
+    litellm_params:
+      model: openai/text-embedding-bge-m3@fp16
+      api_base: http://127.0.0.1:1234/v1
+      api_key: lm-studio
+
+general_settings:
+  master_key: sk-litellm-master

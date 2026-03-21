@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="zh-Hant" data-theme="lofi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LLM Proxy 管理後台</title>
+
+  <!-- DaisyUI (includes Tailwind reset) -->
+  <link href="https://cdn.jsdelivr.net/npm/daisyui@4/dist/full.min.css" rel="stylesheet" />
+  <!-- Tailwind utilities -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- ECharts -->
+  <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+
+  <script type="importmap">
+  {
+    "imports": {
+      "vue": "https://unpkg.com/vue@3/dist/vue.esm-browser.js"
+    }
+  }
+  </script>
+
+  <style>
+    body, html, * {
+      font-family: -apple-system, BlinkMacSystemFont, "Microsoft JhengHei", "微軟正黑體",
+        "PingFang TC", "Helvetica Neue", Arial, sans-serif !important;
+    }
+    html { font-size: 16px !important; }
+    body { font-size: 1rem !important; }
+    [v-cloak] { display: none; }
+    .toast-enter-active, .toast-leave-active { transition: all 0.3s ease; }
+    .toast-enter-from, .toast-leave-to { transform: translateX(110%); opacity: 0; }
+    ::-webkit-scrollbar { width: 5px; height: 5px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 4px; }
+  </style>
+</head>
+<body>
+  <div id="app" v-cloak></div>
+  <script type="module" src="/static/app.js"></script>
+</body>
+</html>
