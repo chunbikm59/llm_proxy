@@ -451,7 +451,7 @@ const KeysPage = {
 
     return {
       keys, loading, fetchKeys, revokeKey, activateKey, deleteKey,
-      createModal, copy, usageModal, openUsage,
+      createModal, copy, copyText, usageModal, openUsage,
       fmtNum, fmtCost, fmtDate,
     }
   },

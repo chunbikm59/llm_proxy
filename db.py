@@ -1,8 +1,12 @@
-from sqlalchemy import Column, Float, Integer, Text, create_engine, event
+import os
+
+from dotenv import load_dotenv
+from sqlalchemy import Column, Float, Integer, Text, create_engine
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
-DB_PATH = "proxy.db"
-DATABASE_URL = f"sqlite:///{DB_PATH}"
+load_dotenv()
+
+DATABASE_URL = os.environ["PROXY_DATABASE_URL"]
 
 
 class Base(DeclarativeBase):
@@ -38,16 +42,7 @@ class UsageLog(Base):
     created_at    = Column(Text, nullable=False)
 
 
-engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
-
-
-@event.listens_for(engine, "connect")
-def _set_pragma(dbapi_conn, _):
-    cur = dbapi_conn.cursor()
-    cur.execute("PRAGMA journal_mode=WAL")
-    cur.execute("PRAGMA synchronous=NORMAL")
-    cur.close()
-
+engine = create_engine(DATABASE_URL)
 
 SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)
 

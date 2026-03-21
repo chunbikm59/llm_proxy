@@ -1,6 +1,6 @@
 # LLM Virtual Key Proxy
 
-LiteLLM（無 DB）前面加一層 FastAPI，負責 virtual key 管理與用量記錄。
+LiteLLM 前置代理層，使用 FastAPI 構建，提供虛擬金鑰管理、用量追蹤與 Web 管理介面。
 
 ## 架構
 
@@ -9,10 +9,12 @@ Client（virtual key）
     ↓  port 8000
 FastAPI Proxy  ←── proxy.db（SQLite）
     ↓  port 4000  master key
-LiteLLM Proxy
+LiteLLM Proxy（subprocess，自動啟動）
     ↓
 真實 LLM API
 ```
+
+FastAPI 啟動時會自動以 subprocess 方式啟動 LiteLLM，無需手動操作。
 
 ## 安裝
 
@@ -22,32 +24,36 @@ pip install -r requirements.txt
 
 ## 啟動
 
-### 1. 先啟動 LiteLLM（無 DB 版）
-
-```bash
-# 設定你的 LLM API key
-set OPENAI_API_KEY=sk-...         # Windows
-# export OPENAI_API_KEY=sk-...   # Linux/Mac
-
-litellm --config litellm_config.yaml --port 4000
-```
-
-### 2. 再啟動 FastAPI Proxy
-
 ```bash
 uvicorn main:app --port 8000 --reload
 ```
 
+啟動後：
+- FastAPI Proxy：`http://localhost:8000`
+- Web 管理介面：`http://localhost:8000/static/index.html`
+- LiteLLM（內部）：`http://localhost:4000`（自動啟動）
+
 ---
 
-## API 使用方式
+## Web 管理介面
 
-### 產生 Virtual Key
+開啟 `http://localhost:8000/static/index.html`，功能包含：
+
+- 建立 / 停用 / 刪除虛擬金鑰
+- 查看每個金鑰的累計用量（token 數、成本）
+- 按日期 + 模型查看用量明細圖表
+- 自訂費率設定（儲存於 localStorage）
+
+---
+
+## Admin API
+
+### 建立虛擬金鑰
 
 ```bash
 curl -X POST http://localhost:8000/admin/keys \
   -H "Content-Type: application/json" \
-  -d '{"name": "team-a"}'
+  -d '{"name": "team-a", "description": "Team A 開發用"}'
 ```
 
 回傳：
@@ -56,6 +62,7 @@ curl -X POST http://localhost:8000/admin/keys \
   "id": 1,
   "key": "sk-xxxxxxxxxxxxxxxx",
   "name": "team-a",
+  "description": "Team A 開發用",
   "created_at": "2026-03-21T10:00:00",
   "is_active": 1,
   "total_requests": 0,
@@ -64,16 +71,16 @@ curl -X POST http://localhost:8000/admin/keys \
 }
 ```
 
-### 列出所有 Keys（含累計用量）
+### 列出所有金鑰（含累計用量）
 
 ```bash
 curl http://localhost:8000/admin/keys
 ```
 
-### 查詢某 Key 的每日用量明細
+### 查詢金鑰每日用量明細
 
 ```bash
-curl http://localhost:8000/admin/keys/sk-xxx/usage
+curl http://localhost:8000/admin/keys/{key_id}/usage
 ```
 
 回傳：
@@ -91,17 +98,29 @@ curl http://localhost:8000/admin/keys/sk-xxx/usage
 ]
 ```
 
-### 停用 Key
+### 停用金鑰（軟刪除）
 
 ```bash
-curl -X DELETE http://localhost:8000/admin/keys/sk-xxx
+curl -X DELETE http://localhost:8000/admin/keys/{key_id}
+```
+
+### 重新啟用金鑰
+
+```bash
+curl -X POST http://localhost:8000/admin/keys/{key_id}/activate
+```
+
+### 永久刪除金鑰
+
+```bash
+curl -X DELETE http://localhost:8000/admin/keys/{key_id}/permanent
 ```
 
 ---
 
-## 呼叫 LLM（用 Virtual Key）
+## 呼叫 LLM（使用虛擬金鑰）
 
-完全相容 OpenAI SDK，只要把 base_url 指到你的 proxy：
+完全相容 OpenAI SDK，只需將 `base_url` 指向 proxy：
 
 ```python
 from openai import OpenAI
@@ -112,7 +131,7 @@ client = OpenAI(
 )
 
 response = client.chat.completions.create(
-    model="gpt-4o",
+    model="qwen3.5-2b@q4_k_m",
     messages=[{"role": "user", "content": "Hello!"}]
 )
 ```
@@ -124,7 +143,7 @@ curl http://localhost:8000/v1/chat/completions \
   -H "Authorization: Bearer sk-你的virtual-key" \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "gpt-4o",
+    "model": "qwen3.5-2b@q4_k_m",
     "messages": [{"role": "user", "content": "Hello!"}]
   }'
 ```
@@ -133,7 +152,7 @@ curl http://localhost:8000/v1/chat/completions \
 
 ## 新增 LLM Provider
 
-編輯 `litellm_config.yaml`：
+編輯 `litellm_config.yaml`，重啟 FastAPI 即可：
 
 ```yaml
 model_list:
@@ -141,6 +160,26 @@ model_list:
     litellm_params:
       model: anthropic/claude-3-5-sonnet-20241022
       api_key: os.environ/ANTHROPIC_API_KEY
+
+  - model_name: gpt-4o
+    litellm_params:
+      model: openai/gpt-4o
+      api_key: os.environ/OPENAI_API_KEY
 ```
 
-重啟 LiteLLM 即可，FastAPI proxy 完全不用改。
+FastAPI proxy 不需任何修改。
+
+---
+
+## 測試
+
+```bash
+# 金鑰管理 CRUD
+python -m pytest test/test_key_crud.py -v
+
+# 串流功能
+python -m pytest test/test_stream.py -v
+
+# 並發測試
+python -m pytest test/test_concurrent.py -v
+```
