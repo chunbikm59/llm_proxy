@@ -21,6 +21,8 @@ const api = {
   listKeys: () => api._fetch('/admin/keys'),
   createKey: (name, description) =>
     api._fetch('/admin/keys', { method: 'POST', body: JSON.stringify({ name, description }) }),
+  updateKey: (id, name, description) =>
+    api._fetch(`/admin/keys/${id}`, { method: 'PATCH', body: JSON.stringify({ name, description }) }),
   revokeKey: (id) => api._fetch(`/admin/keys/${id}`, { method: 'DELETE' }),
   activateKey: (id) => api._fetch(`/admin/keys/${id}/activate`, { method: 'POST' }),
   deleteKeyPermanent: (id) => api._fetch(`/admin/keys/${id}/permanent`, { method: 'DELETE' }),
@@ -130,6 +132,37 @@ function useCreateModal(onSuccess) {
   }
 
   return { visible, form, submitting, formError, createdKey, open, close, submit }
+}
+
+function useEditModal(onSuccess) {
+  const visible = ref(false)
+  const key = ref(null)
+  const form = reactive({ name: '', description: '' })
+  const submitting = ref(false)
+  const formError = ref('')
+
+  function open(k) {
+    key.value = k
+    form.name = k.name
+    form.description = k.description || ''
+    formError.value = ''
+    visible.value = true
+    nextTick(() => document.getElementById('edit-name-input')?.focus())
+  }
+  function close() { visible.value = false; key.value = null }
+
+  async function submit() {
+    if (!form.name.trim()) { formError.value = 'Name 為必填'; return }
+    submitting.value = true; formError.value = ''
+    try {
+      const updated = await api.updateKey(key.value.id, form.name.trim(), form.description.trim())
+      await onSuccess(updated)
+      close()
+    } catch (e) { formError.value = e.message }
+    finally { submitting.value = false }
+  }
+
+  return { visible, key, form, submitting, formError, open, close, submit }
 }
 
 // ─────────────────────────────────────────────────────────────────
@@ -449,16 +482,26 @@ const KeysPage = {
       } finally { usageModal.loading = false }
     }
 
+    const editModal = useEditModal(async (updated) => {
+      const idx = keys.value.findIndex(k => k.id === updated.id)
+      if (idx >= 0) keys.value[idx] = updated
+      notify.push(`Key「${updated.name}」編輯成功`)
+    })
+
+    function openEdit(k) {
+      editModal.open(k)
+    }
+
     return {
       keys, loading, fetchKeys, revokeKey, activateKey, deleteKey,
-      createModal, copy, copyText, usageModal, openUsage,
+      createModal, editModal, copy, copyText, usageModal, openUsage, openEdit,
       fmtNum, fmtCost, fmtDate,
     }
   },
   template: `
 <div class="p-6 space-y-5">
   <!-- Header -->
-  <div class="flex items-center justify-between">
+  <div class="flex items-center gap-4">
     <div>
       <h2 class="text-xl font-bold text-gray-800">API Key 管理</h2>
       <p class="text-sm text-gray-500 mt-0.5">管理所有虛擬 API Key</p>
@@ -521,6 +564,8 @@ const KeysPage = {
             <div class="flex items-center justify-center gap-1.5">
               <button @click="openUsage(k)"
                 class="btn btn-xs btn-info btn-outline" title="查看用量"><i data-lucide="bar-chart-2" class="w-3.5 h-3.5"></i></button>
+              <button @click="openEdit(k)"
+                class="btn btn-xs btn-primary btn-outline" title="編輯"><i data-lucide="edit-3" class="w-3.5 h-3.5"></i></button>
               <button v-if="k.is_active" @click="revokeKey(k)"
                 class="btn btn-xs btn-warning btn-outline" title="停用"><i data-lucide="pause" class="w-3.5 h-3.5"></i></button>
               <button v-else @click="activateKey(k)"
@@ -584,6 +629,41 @@ const KeysPage = {
         </template>
       </div>
       <div class="modal-backdrop" @click="createModal.close()"></div>
+    </div>
+  </teleport>
+
+  <!-- 編輯 Key Modal -->
+  <teleport to="body">
+    <div :class="editModal.visible.value ? 'modal modal-open' : 'modal'">
+      <div class="modal-box max-w-md">
+        <h3 class="text-lg font-semibold mb-5">編輯 API Key</h3>
+        <form @submit.prevent="editModal.submit()">
+          <div class="space-y-4">
+            <div>
+              <label class="block text-sm font-medium mb-1.5">
+                Name <span class="text-error">*</span>
+              </label>
+              <input id="edit-name-input" v-model="editModal.form.name"
+                class="input input-bordered w-full" placeholder="Key 名稱" required />
+            </div>
+            <div>
+              <label class="block text-sm font-medium mb-1.5">Description</label>
+              <input v-model="editModal.form.description"
+                class="input input-bordered w-full" placeholder="選填說明" />
+            </div>
+            <p v-if="editModal.formError.value" class="text-error text-sm">
+              {{ editModal.formError.value }}
+            </p>
+          </div>
+          <div class="modal-action">
+            <button type="button" @click="editModal.close()" class="btn btn-ghost">取消</button>
+            <button type="submit" :disabled="editModal.submitting.value" class="btn btn-primary disabled:opacity-50">
+              {{ editModal.submitting.value ? '保存中…' : '保存' }}
+            </button>
+          </div>
+        </form>
+      </div>
+      <div class="modal-backdrop" @click="editModal.close()"></div>
     </div>
   </teleport>
 

@@ -212,6 +212,30 @@ def activate_key(key_id: int):
     return {"message": "Key activated"}
 
 
+@app.patch("/admin/keys/{key_id}")
+def update_key(key_id: int, body: KeyCreate):
+    """更新 API Key 的 name 和 description"""
+    db = get_db()
+    try:
+        key_obj = db.query(ApiKey).filter(ApiKey.id == key_id).first()
+        if not key_obj:
+            raise HTTPException(status_code=404, detail="Key not found")
+        if body.name.strip():
+            key_obj.name = body.name.strip()
+        if body.description is not None:
+            key_obj.description = body.description.strip()
+        db.commit()
+        db.refresh(key_obj)
+        return KeyInfo.model_validate(key_obj)
+    except HTTPException:
+        raise
+    except Exception:
+        db.rollback()
+        raise
+    finally:
+        db.close()
+
+
 @app.delete("/admin/keys/{key_id}/permanent")
 def delete_key(key_id: int):
     """永久刪除一個 virtual key 及其用量紀錄"""
@@ -281,9 +305,12 @@ async def proxy(path: str, request: Request, key_info: dict = Depends(verify_key
 
         log_key = key_info["key"]
         try:
-            stream_model = json.loads(body).get("model") or "unknown"
+            stream_model = json.loads(body).get("model") or ""
         except Exception:
-            stream_model = "unknown"
+            stream_model = ""
+        if not stream_model:
+            await upstream_response.aclose()
+            return JSONResponse(status_code=400, content={"error": "missing 'model' field in request body"})
         should_log = upstream_response.status_code < 400
 
         # 從 request body 提取 messages 文字，用於中斷時估算 input tokens
@@ -354,9 +381,11 @@ async def proxy(path: str, request: Request, key_info: dict = Depends(verify_key
     cost = float(upstream.headers.get("x-litellm-response-cost", 0) or 0)
     input_tokens = output_tokens = total_tokens = 0
     try:
-        model = json.loads(body).get("model") or "unknown"
+        model = json.loads(body).get("model") or ""
     except Exception:
-        model = "unknown"
+        model = ""
+    if not model:
+        return JSONResponse(status_code=400, content={"error": "missing 'model' field in request body"})
 
     # 1. 從 LiteLLM header 讀
     usage_str = upstream.headers.get("x-litellm-usage", "")
