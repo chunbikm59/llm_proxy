@@ -413,13 +413,24 @@ async def proxy(path: str, request: Request, key_info: dict = Depends(verify_key
 
     # 3. 最終 fallback：用字元比例估算
     if total_tokens == 0:
-        try:
-            req_messages = json.loads(body).get("messages") or []
-            fallback_text = " ".join(m.get("content", "") for m in req_messages if isinstance(m.get("content"), str))
-        except Exception:
-            fallback_text = body.decode("utf-8", errors="ignore")
+        if request_type == "embedding":
+            try:
+                req_input = json.loads(body).get("input") or ""
+                if isinstance(req_input, list):
+                    fallback_text = " ".join(str(s) for s in req_input)
+                else:
+                    fallback_text = str(req_input)
+            except Exception:
+                fallback_text = body.decode("utf-8", errors="ignore")
+        else:
+            try:
+                req_messages = json.loads(body).get("messages") or []
+                fallback_text = " ".join(m.get("content", "") for m in req_messages if isinstance(m.get("content"), str))
+            except Exception:
+                fallback_text = body.decode("utf-8", errors="ignore")
         input_tokens = estimate_tokens(fallback_text)
         total_tokens = input_tokens
+        print(f"[DEBUG] {request_type} fallback: text='{fallback_text[:50]}...' tokens={input_tokens}", flush=True)
 
     if upstream.status_code < 400:
         await _log_usage(
