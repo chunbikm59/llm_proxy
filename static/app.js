@@ -283,9 +283,10 @@ function useUsageData(allKeys, rates) {
     const rows = filtered.value
     const total_requests = rows.reduce((s, r) => s + (r.requests || 1), 0)
     const total_tokens = rows.reduce((s, r) => s + r.total_tokens, 0)
+    const input_tokens = rows.reduce((s, r) => s + r.input_tokens, 0)
+    const output_tokens = rows.reduce((s, r) => s + r.output_tokens, 0)
     const total_cost = rows.reduce((s, r) => s + calcCost(r, rates), 0)
-    const avg_tokens = total_requests > 0 ? Math.round(total_tokens / total_requests) : 0
-    return { total_requests, total_tokens, total_cost, avg_tokens }
+    return { total_requests, total_tokens, input_tokens, output_tokens, total_cost }
   })
 
   return {
@@ -872,7 +873,7 @@ const UsagePage = {
   </div>
 
   <!-- 統計卡片 -->
-  <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+  <div class="grid grid-cols-2 lg:grid-cols-5 gap-4">
     <div class="card bg-base-100 shadow-sm border border-base-200 text-center">
       <div class="card-body p-4">
         <div class="text-4xl font-bold">{{ fmtNum(summary.total_requests) }}</div>
@@ -881,7 +882,19 @@ const UsagePage = {
     </div>
     <div class="card bg-base-100 shadow-sm border border-base-200 text-center">
       <div class="card-body p-4">
-        <div class="text-4xl font-bold text-primary">{{ fmtNum(summary.total_tokens) }}</div>
+        <div class="text-4xl font-bold">{{ fmtNum(summary.input_tokens) }}</div>
+        <div class="text-sm text-base-content/50 mt-1.5">輸入 Tokens</div>
+      </div>
+    </div>
+    <div class="card bg-base-100 shadow-sm border border-base-200 text-center">
+      <div class="card-body p-4">
+        <div class="text-4xl font-bold">{{ fmtNum(summary.output_tokens) }}</div>
+        <div class="text-sm text-base-content/50 mt-1.5">輸出 Tokens</div>
+      </div>
+    </div>
+    <div class="card bg-base-100 shadow-sm border border-base-200 text-center">
+      <div class="card-body p-4">
+        <div class="text-4xl font-bold">{{ fmtNum(summary.total_tokens) }}</div>
         <div class="text-sm text-base-content/50 mt-1.5">總 Tokens</div>
       </div>
     </div>
@@ -889,12 +902,6 @@ const UsagePage = {
       <div class="card-body p-4">
         <div class="text-4xl font-bold" style="color: rgb(237 157 0)">{{ fmtCost(summary.total_cost) }}</div>
         <div class="text-sm text-base-content/50 mt-1.5">估算費用（USD）</div>
-      </div>
-    </div>
-    <div class="card bg-base-100 shadow-sm border border-base-200 text-center">
-      <div class="card-body p-4">
-        <div class="text-4xl font-bold text-secondary">{{ fmtNum(summary.avg_tokens) }}</div>
-        <div class="text-sm text-base-content/50 mt-1.5">平均 Tokens / 請求</div>
       </div>
     </div>
   </div>
