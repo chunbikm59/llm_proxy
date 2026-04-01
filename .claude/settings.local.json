@@ -1,0 +1,22 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python test_embedding.py)",
+      "Bash(python test_embedding_tokens.py)",
+      "Bash(python -c \":*)",
+      "Bash(netstat -ano)",
+      "Bash(ls -la /c)",
+      "Read(//d/Storage/**)",
+      "Bash(python -c \"import sys; print\\(sys.version\\)\")",
+      "Bash(.venv/Scripts/python.exe -c \"import asyncio; print\\(asyncio.__version__\\); import subprocess; print\\(''subprocess ok''\\)\")",
+      "Bash(.venv/Scripts/python.exe -c \"import asyncio, collections, subprocess; print\\(''all ok''\\)\")",
+      "Bash(.venv/Scripts/python.exe -c \"import sqlalchemy; print\\(sqlalchemy.__version__\\)\")",
+      "Bash(source venv/Scripts/activate)",
+      "Bash(\"d:/Storage/ASUS F571GT/MyProjects/llm_proxy/.venv/Scripts/python.exe\" -c \":*)",
+      "Bash(npm --version)",
+      "Bash(pnpm --version)",
+      "Bash(npm create:*)",
+      "Bash(npm install:*)"
+    ]
+  }
+}
