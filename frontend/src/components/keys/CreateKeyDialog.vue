@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { ref, reactive, nextTick } from 'vue'
 import { api, type ApiKey } from '@/api'
-import { toast } from 'sonner'
 import { copyText } from '@/utils/clipboard'
 import { Dialog } from '@/components/ui/dialog'
 import { DialogContent } from '@/components/ui/dialog'
@@ -11,7 +10,7 @@ import { DialogFooter } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Copy, PartyPopper } from 'lucide-vue-next'
+import { Copy, Check, PartyPopper } from 'lucide-vue-next'
 
 const emit = defineEmits<{ created: [key: ApiKey] }>()
 
@@ -20,6 +19,7 @@ const form = reactive({ name: '', description: '' })
 const submitting = ref(false)
 const formError = ref('')
 const createdKey = ref<ApiKey | null>(null)
+const copied = ref(false)
 
 function open() {
   form.name = ''
@@ -53,7 +53,8 @@ async function submit() {
 async function copyKey() {
   if (!createdKey.value) return
   await copyText(createdKey.value.key)
-  toast.success('已複製到剪貼簿')
+  copied.value = true
+  setTimeout(() => { copied.value = false }, 2000)
 }
 
 defineExpose({ open })
@@ -76,7 +77,8 @@ defineExpose({ open })
         <div class="flex items-center gap-2 rounded-lg border bg-muted/50 px-3 py-2.5">
           <code class="flex-1 text-xs font-mono break-all text-foreground/80">{{ createdKey.key }}</code>
           <Button variant="ghost" size="icon-sm" @click="copyKey">
-            <Copy class="h-3.5 w-3.5" />
+            <Check v-if="copied" class="h-3.5 w-3.5 text-emerald-600" />
+            <Copy v-else class="h-3.5 w-3.5" />
           </Button>
         </div>
         <DialogFooter>

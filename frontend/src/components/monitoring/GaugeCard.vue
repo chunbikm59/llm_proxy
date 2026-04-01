@@ -1,12 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import VChart from 'vue-echarts'
-import { use } from 'echarts/core'
-import { CanvasRenderer } from 'echarts/renderers'
-import { GaugeChart } from 'echarts/charts'
 import { Card, CardContent } from '@/components/ui/card'
-
-use([CanvasRenderer, GaugeChart])
 
 interface Props {
   title: string
@@ -17,48 +11,44 @@ interface Props {
 
 const props = defineProps<Props>()
 
-const gaugeOption = computed(() => ({
-  series: [{
-    type: 'gauge',
-    startAngle: 200,
-    endAngle: -20,
-    min: 0,
-    max: 100,
-    radius: '85%',
-    axisLine: {
-      lineStyle: { width: 12, color: [[1, '#e5e7eb']] },
-    },
-    progress: {
-      show: true,
-      width: 12,
-      itemStyle: { color: props.color },
-    },
-    pointer: { show: false },
-    axisTick: { show: false },
-    splitLine: { show: false },
-    axisLabel: { show: false },
-    detail: {
-      valueAnimation: true,
-      formatter: '{value}%',
-      color: '#1f2937',
-      fontSize: 18,
-      fontWeight: 'bold',
-      offsetCenter: [0, '10%'],
-    },
-    data: [{ value: props.percent }],
-  }],
+const statusColor = computed(() => {
+  if (props.percent >= 90) return { text: 'text-red-500', bar: 'bg-red-500' }
+  if (props.percent >= 70) return { text: 'text-amber-500', bar: 'bg-amber-500' }
+  return { text: '', bar: '' }
+})
+
+const barStyle = computed(() => ({
+  width: `${props.percent}%`,
+  backgroundColor: props.color,
+  transition: 'width 0.6s ease',
 }))
 </script>
 
 <template>
   <Card>
     <CardContent class="p-5">
-      <div class="flex items-center gap-2 mb-1">
-        <slot name="icon" />
-        <span class="font-medium text-sm">{{ title }}</span>
-        <span v-if="subtitle" class="ml-auto text-xs text-muted-foreground shrink-0">{{ subtitle }}</span>
+      <!-- Header row -->
+      <div class="flex items-center justify-between mb-4">
+        <div class="flex items-center gap-2">
+          <slot name="icon" />
+          <span class="text-sm font-medium text-foreground">{{ title }}</span>
+        </div>
+        <span v-if="subtitle" class="text-xs text-muted-foreground">{{ subtitle }}</span>
       </div>
-      <VChart :option="gaugeOption" autoresize style="height: 160px; width: 100%" />
+
+      <!-- Big number -->
+      <div class="mb-3">
+        <span
+          class="text-4xl font-bold tabular-nums leading-none"
+          :class="statusColor.text || 'text-foreground'"
+        >{{ percent }}</span>
+        <span class="text-lg font-medium text-muted-foreground ml-1">%</span>
+      </div>
+
+      <!-- Progress bar -->
+      <div class="h-2 w-full rounded-full bg-muted overflow-hidden">
+        <div class="h-full rounded-full" :style="barStyle" />
+      </div>
     </CardContent>
   </Card>
 </template>
