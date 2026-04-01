@@ -74,10 +74,9 @@ app = FastAPI(title="LLM Virtual Key Proxy", lifespan=lifespan)
 
 # 靜態檔案（必須在通用 proxy 路由之前掛載）
 _static_dir = Path(__file__).parent / "static"
+(_static_dir / "assets").mkdir(parents=True, exist_ok=True)
+app.mount("/assets", StaticFiles(directory=_static_dir / "assets"), name="assets")
 app.mount("/static", StaticFiles(directory=_static_dir), name="static")
-# Vite 打包的 JS/CSS assets 放在 static/assets/，需要獨立掛載讓 index.html 的 /assets/... 路徑可存取
-if (_static_dir / "assets").exists():
-    app.mount("/assets", StaticFiles(directory=_static_dir / "assets"), name="assets")
 
 
 @app.get("/")
