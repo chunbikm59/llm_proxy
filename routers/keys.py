@@ -1,7 +1,8 @@
 """API Key 管理路由"""
 import secrets
 from datetime import datetime, timezone, timedelta
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Query
+from typing import Optional
 
 from db import get_db, ApiKey, UsageLog
 from models import KeyCreate, KeyInfo
@@ -40,6 +41,41 @@ def list_keys():
     try:
         rows = db.query(ApiKey).order_by(ApiKey.created_at.desc()).all()
         return [KeyInfo.model_validate(r) for r in rows]
+    finally:
+        db.close()
+
+
+@router.get("/usage")
+def all_usage(
+    start: Optional[str] = Query(None, description="開始日期 YYYY-MM-DD"),
+    end: Optional[str] = Query(None, description="結束日期 YYYY-MM-DD"),
+):
+    """查詢所有 key 在指定日期範圍內的用量明細"""
+    db = get_db()
+    try:
+        q = (
+            db.query(
+                UsageLog.date, UsageLog.model,
+                func.sum(UsageLog.input_tokens).label("input_tokens"),
+                func.sum(UsageLog.output_tokens).label("output_tokens"),
+                func.sum(UsageLog.total_tokens).label("total_tokens"),
+                func.sum(UsageLog.cost_usd).label("cost_usd"),
+                func.count().label("requests"),
+                ApiKey.id.label("key_id"),
+                ApiKey.name.label("key_name"),
+            )
+            .join(ApiKey, UsageLog.api_key == ApiKey.key)
+        )
+        if start:
+            q = q.filter(UsageLog.date >= start)
+        if end:
+            q = q.filter(UsageLog.date <= end)
+        rows = (
+            q.group_by(UsageLog.date, UsageLog.model, ApiKey.id, ApiKey.name)
+            .order_by(UsageLog.date.desc())
+            .all()
+        )
+        return [dict(r._mapping) for r in rows]
     finally:
         db.close()
 

@@ -67,5 +67,7 @@ export const api = {
   activateKey: (id: number) => _fetch<{ message: string }>(`/admin/keys/${id}/activate`, { method: 'POST' }),
   deleteKeyPermanent: (id: number) => _fetch<null>(`/admin/keys/${id}/permanent`, { method: 'DELETE' }),
   getKeyUsage: (id: number) => _fetch<UsageRow[]>(`/admin/keys/${id}/usage`),
+  getUsage: (start: string, end: string) =>
+    _fetch<UsageRow[]>(`/admin/keys/usage?start=${start}&end=${end}`),
   getSystemStats: () => _fetch<SystemStats>('/admin/system/stats'),
 }

@@ -25,7 +25,7 @@ const props = defineProps<Props>()
 const showRates = ref(false)
 const groupBy = ref<'type' | 'key' | 'model'>('type')
 
-const usageData = useUsageData(props.allKeys, props.rates)
+const usageData = useUsageData(props.rates)
 const { dates, filterKeys, filterType, filterModels, loading, fetchAll, availableModels, filtered, summary } = usageData
 
 const keyOptions = computed(() => props.allKeys.value.map(k => ({ value: k.id, label: k.name })))
@@ -40,8 +40,8 @@ onMounted(async () => {
   await fetchAll()
 })
 
-watch(() => props.allKeys.value, (v) => {
-  if (v && v.length) fetchAll()
+watch([() => dates.start, () => dates.end], () => {
+  fetchAll()
 })
 </script>
 
