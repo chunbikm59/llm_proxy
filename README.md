@@ -1,158 +1,146 @@
 # LLM Virtual Key Proxy
 
-LiteLLM 前置代理層，使用 FastAPI 構建，提供虛擬金鑰管理、用量追蹤與 Web 管理介面。
+以 FastAPI 構建的本地 LLM 虛擬金鑰管理代理層，主要用於管理本地部署的 llama.cpp 模型，提供多租戶 API 金鑰管理、用量追蹤與成本控制，並附有完整的 Vue 3 Web 管理介面。亦支援透過 LiteLLM 串接雲端 API（OpenAI、Anthropic 等）。
 
-## 架構
+## 專案動機
+
+在本地架設 LLM 服務（如 llama.cpp）供多人共用時，難以按使用者個別追蹤用量與成本。本專案在本地模型服務前架設代理層，發行虛擬金鑰給各使用者，統一收攏所有請求並記錄用量，實現細粒度的成本可視化與資源管控。
+
+## 功能亮點
+
+- **虛擬金鑰管理** — 建立、停用、啟用、永久刪除虛擬 API 金鑰
+- **用量追蹤** — 每筆請求記錄 Token 數與成本（依模型套用自訂費率）
+- **多粒度用量查詢** — 按金鑰 / 日期 / 模型維度彙整，支援批次查詢
+- **串流代理** — 完整支援 OpenAI SSE 串流格式透傳
+- **系統監控** — 即時 CPU、RAM、GPU（NVML）指標
+- **llama.cpp 實例管理** — 從 Web UI 啟動 / 停止本地模型 subprocess，即時查看 log
+- **OpenAI 相容介面** — 客戶端零改動，只需替換 `base_url`
+
+## 系統架構
 
 ```
 Client（virtual key）
-    ↓  port 8000
-FastAPI Proxy  ←── proxy.db（SQLite）
-    ↓  port 4000  master key
+    ↓  :1235
+FastAPI Proxy  ←── PostgreSQL（用量 / 金鑰資料）
+    ↓  :4000（master key）
 LiteLLM Proxy（subprocess，自動啟動）
     ↓
-真實 LLM API
+本地 llama.cpp 實例，或雲端 API（OpenAI / Anthropic…）
 ```
 
-FastAPI 啟動時會自動以 subprocess 方式啟動 LiteLLM，無需手動操作。
+FastAPI 啟動時自動以 subprocess 方式啟動 LiteLLM，無需額外手動操作。
 
-## 安裝
+## 技術棧
+
+| 層次 | 技術 |
+|------|------|
+| Backend | Python、FastAPI、SQLAlchemy、LiteLLM、HTTPX |
+| 監控 | psutil、pynvml |
+| Frontend | Vue 3、TypeScript、Vite、Tailwind CSS v4 |
+| UI 元件 | Radix Vue（shadcn/ui 風格） |
+| 圖表 | ECharts |
+| 資料庫 | PostgreSQL |
+
+## 目錄結構
+
+```
+├── main.py                  # FastAPI 入口，proxy 路由、串流處理
+├── db.py                    # SQLAlchemy 模型（ApiKey、UsageLog、LlamaCppInstance）
+├── models.py                # Pydantic schema
+├── llama_manager.py         # llama.cpp subprocess 生命週期管理
+├── routers/
+│   ├── keys.py              # 虛擬金鑰 CRUD
+│   ├── proxy.py             # 請求代理 + 用量記錄
+│   └── monitoring.py        # 系統資源監控 + llama 實例管理 API
+├── frontend/src/
+│   ├── views/               # KeysView、UsageView、MonitoringView、LlamaView
+│   ├── components/          # 各功能的子元件
+│   ├── composables/         # useKeys、useRates、useUsageData、useLlamaInstances
+│   └── api/index.ts         # HTTP 客戶端
+├── litellm_config.yaml      # LiteLLM 模型定義
+└── test/                    # pytest 測試套件
+```
+
+## 安裝與啟動
 
 ```bash
+# Backend
 pip install -r requirements.txt
+
+# 建立 .env（參考 .env.example）
+echo "PROXY_DATABASE_URL=postgresql+psycopg2://user:pass@host/dbname" > .env
+
+# Frontend 打包（輸出至 ../static/，由 FastAPI 直接提供）
+cd frontend && npm install && npm run build
+
+# 啟動（監聽 :1235，同時自動啟動 LiteLLM subprocess）
+python main.py
 ```
 
-## 啟動
-
-```bash
-uvicorn main:app --port 8000 --reload
-```
-
-啟動後：
-- FastAPI Proxy：`http://localhost:8000`
-- Web 管理介面：`http://localhost:8000/static/index.html`
-- LiteLLM（內部）：`http://localhost:4000`（自動啟動）
-
----
+Web 管理介面：`http://localhost:1235`
 
 ## Web 管理介面
 
-開啟 `http://localhost:8000/static/index.html`，功能包含：
-
-- 建立 / 停用 / 刪除虛擬金鑰
-- 查看每個金鑰的累計用量（token 數、成本）
-- 按日期 + 模型查看用量明細圖表
-- 自訂費率設定（儲存於 localStorage）
-
----
+| 頁面 | 功能 |
+|------|------|
+| Keys | 建立 / 停用 / 刪除虛擬金鑰，查看個別金鑰累計用量 |
+| Usage | 按日期 + 模型的用量明細圖表，支援多金鑰批次查詢 |
+| Monitoring | 即時 CPU / RAM / GPU 監控儀表板 |
+| Llama | 啟動 / 停止本地 llama.cpp 實例，即時串流 log |
 
 ## Admin API
 
-### 建立虛擬金鑰
+### 虛擬金鑰管理
 
 ```bash
-curl -X POST http://localhost:8000/admin/keys \
+# 建立金鑰
+curl -X POST http://localhost:1235/admin/keys \
   -H "Content-Type: application/json" \
   -d '{"name": "team-a", "description": "Team A 開發用"}'
+
+# 列出所有金鑰
+curl http://localhost:1235/admin/keys
+
+# 查詢金鑰每日用量（按日期 + 模型彙整）
+curl http://localhost:1235/admin/keys/{key_id}/usage
+
+# 停用金鑰（軟刪除）
+curl -X DELETE http://localhost:1235/admin/keys/{key_id}
+
+# 重新啟用
+curl -X POST http://localhost:1235/admin/keys/{key_id}/activate
+
+# 永久刪除
+curl -X DELETE http://localhost:1235/admin/keys/{key_id}/permanent
 ```
 
-回傳：
-```json
-{
-  "id": 1,
-  "key": "sk-xxxxxxxxxxxxxxxx",
-  "name": "team-a",
-  "description": "Team A 開發用",
-  "created_at": "2026-03-21T10:00:00",
-  "is_active": 1,
-  "total_requests": 0,
-  "total_tokens": 0,
-  "total_cost_usd": 0.0
-}
-```
-
-### 列出所有金鑰（含累計用量）
+### 系統監控
 
 ```bash
-curl http://localhost:8000/admin/keys
+curl http://localhost:1235/admin/system/stats
 ```
 
-### 查詢金鑰每日用量明細
+## 使用虛擬金鑰呼叫 LLM
 
-```bash
-curl http://localhost:8000/admin/keys/{key_id}/usage
-```
-
-回傳：
-```json
-[
-  {
-    "date": "2026-03-21",
-    "model": "gpt-4o",
-    "input_tokens": 1200,
-    "output_tokens": 800,
-    "total_tokens": 2000,
-    "cost_usd": 0.024,
-    "requests": 5
-  }
-]
-```
-
-### 停用金鑰（軟刪除）
-
-```bash
-curl -X DELETE http://localhost:8000/admin/keys/{key_id}
-```
-
-### 重新啟用金鑰
-
-```bash
-curl -X POST http://localhost:8000/admin/keys/{key_id}/activate
-```
-
-### 永久刪除金鑰
-
-```bash
-curl -X DELETE http://localhost:8000/admin/keys/{key_id}/permanent
-```
-
----
-
-## 呼叫 LLM（使用虛擬金鑰）
-
-完全相容 OpenAI SDK，只需將 `base_url` 指向 proxy：
+介面完全相容 OpenAI SDK，只需替換 `base_url` 與 `api_key`：
 
 ```python
 from openai import OpenAI
 
 client = OpenAI(
-    api_key="sk-你的virtual-key",
-    base_url="http://localhost:8000/v1"
+    api_key="sk-your-virtual-key",
+    base_url="http://localhost:1235/v1"
 )
 
 response = client.chat.completions.create(
-    model="qwen3.5-2b@q4_k_m",
+    model="gpt-4o",
     messages=[{"role": "user", "content": "Hello!"}]
 )
 ```
 
-或用 curl：
-
-```bash
-curl http://localhost:8000/v1/chat/completions \
-  -H "Authorization: Bearer sk-你的virtual-key" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "model": "qwen3.5-2b@q4_k_m",
-    "messages": [{"role": "user", "content": "Hello!"}]
-  }'
-```
-
----
-
 ## 新增 LLM Provider
 
-編輯 `litellm_config.yaml`，重啟 FastAPI 即可：
+編輯 `litellm_config.yaml` 後重啟即可，proxy 層不需任何修改：
 
 ```yaml
 model_list:
@@ -165,21 +153,19 @@ model_list:
     litellm_params:
       model: openai/gpt-4o
       api_key: os.environ/OPENAI_API_KEY
+
+  - model_name: local-llama
+    litellm_params:
+      model: openai/local-llama
+      api_base: http://127.0.0.1:8080/v1
+      api_key: none
 ```
-
-FastAPI proxy 不需任何修改。
-
----
 
 ## 測試
 
 ```bash
-# 金鑰管理 CRUD
-python -m pytest test/test_key_crud.py -v
-
-# 串流功能
-python -m pytest test/test_stream.py -v
-
-# 並發測試
-python -m pytest test/test_concurrent.py -v
+python -m pytest test/test_key_crud.py -v     # 金鑰 CRUD
+python -m pytest test/test_stream.py -v       # 串流
+python -m pytest test/test_concurrent.py -v  # 並發
+python -m pytest test/test_embedding.py -v   # Embedding
 ```
