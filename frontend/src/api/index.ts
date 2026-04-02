@@ -45,6 +45,7 @@ export interface SystemStats {
 export interface LlamaInstanceConfig {
   executable_path: string
   model_path: string
+  mmproj_path: string | null
   host: string
   port: number
   context_size: number

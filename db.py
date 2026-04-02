@@ -50,6 +50,7 @@ class LlamaCppInstance(Base):
     name                 = Column(Text, unique=True, nullable=False)
     executable_path      = Column(Text, nullable=False)
     model_path           = Column(Text, nullable=False)
+    mmproj_path          = Column(Text, nullable=True)
     host                 = Column(Text, nullable=False, default="127.0.0.1")
     port                 = Column(Integer, nullable=False)
     context_size         = Column(Integer, nullable=False, default=4096)

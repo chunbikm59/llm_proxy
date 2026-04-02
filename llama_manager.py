@@ -48,6 +48,7 @@ class InstanceCreateRequest(BaseModel):
     name:                 str
     executable_path:      str
     model_path:           str
+    mmproj_path:          Optional[str] = None
     host:                 str = "127.0.0.1"
     port:                 int
     context_size:         int = 4096
@@ -74,6 +75,7 @@ class InstanceUpdateRequest(BaseModel):
 
     executable_path:      Optional[str]   = None
     model_path:           Optional[str]   = None
+    mmproj_path:          Optional[str]   = None
     host:                 Optional[str]   = None
     port:                 Optional[int]   = None
     context_size:         Optional[int]   = None
@@ -102,6 +104,10 @@ def _build_cmd(config: dict) -> list[str]:
         config["executable_path"],
         "--model",   config["model_path"],
         "--host",    config["host"],
+    ]
+    if config.get("mmproj_path"):
+        cmd += ["--mmproj", config["mmproj_path"]]
+    cmd += [
         "--port",    str(config["port"]),
         "--ctx-size", str(config["context_size"]),
         "--n-gpu-layers", str(config["n_gpu_layers"]),
@@ -138,6 +144,7 @@ def _state_to_dict(state: InstanceState) -> dict:
         "config": {
             "executable_path":      state.config["executable_path"],
             "model_path":           state.config["model_path"],
+            "mmproj_path":          state.config.get("mmproj_path"),
             "host":                 state.config["host"],
             "port":                 state.config["port"],
             "context_size":         state.config["context_size"],
@@ -404,6 +411,7 @@ class LlamaCppManager:
                         name=req.name,
                         executable_path=req.executable_path,
                         model_path=req.model_path,
+                        mmproj_path=req.mmproj_path,
                         host=req.host,
                         port=req.port,
                         context_size=req.context_size,

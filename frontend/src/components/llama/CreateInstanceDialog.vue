@@ -24,6 +24,7 @@ const restartOnSave = ref(false)
 type FormData = { name: string } & {
   executable_path: string
   model_path: string
+  mmproj_path: string
   host: string
   port: number | ''
   context_size: number
@@ -49,12 +50,13 @@ function defaultForm(): FormData {
     name: '',
     executable_path: 'C:\\llama\\llama-server.exe',
     model_path: '',
+    mmproj_path: '',
     host: '127.0.0.1',
     port: '',
     context_size: 4096,
     n_threads: '',
-    n_gpu_layers: 0,
-    parallel: 1,
+    n_gpu_layers: 999,
+    parallel: 4,
     batch_size: 512,
     split_mode: '',
     defrag_thold: '',
@@ -88,6 +90,7 @@ function openEdit(instance: LlamaInstance) {
     name: instance.name,
     executable_path: instance.config.executable_path,
     model_path: instance.config.model_path,
+    mmproj_path: instance.config.mmproj_path ?? '',
     host: instance.config.host,
     port: instance.config.port,
     context_size: instance.config.context_size,
@@ -131,6 +134,7 @@ async function submit() {
         name: form.name.trim(),
         executable_path: form.executable_path.trim(),
         model_path: form.model_path.trim(),
+        mmproj_path: form.mmproj_path.trim() || null,
         host: form.host.trim() || '127.0.0.1',
         port: Number(form.port),
         context_size: form.context_size,
@@ -159,6 +163,7 @@ async function submit() {
       const patchBody: Partial<LlamaInstanceConfig> = {
         executable_path: form.executable_path.trim(),
         model_path: form.model_path.trim(),
+        mmproj_path: form.mmproj_path.trim() || null,
         host: form.host.trim() || '127.0.0.1',
         port: Number(form.port),
         context_size: form.context_size,
@@ -239,6 +244,11 @@ const cacheTypeOptions = [
           <div class="space-y-1.5">
             <Label>模型路徑 <span class="text-destructive">*</span></Label>
             <Input v-model="form.model_path" placeholder="例如：C:\models\mistral-7b.gguf" />
+          </div>
+
+          <div class="space-y-1.5">
+            <Label>Multimodal Projector 路徑 <span class="text-muted-foreground text-xs">（選填，多模態模型用）</span></Label>
+            <Input v-model="form.mmproj_path" placeholder="例如：C:\models\llava-clip.gguf" />
           </div>
 
           <div class="grid grid-cols-2 gap-3">
