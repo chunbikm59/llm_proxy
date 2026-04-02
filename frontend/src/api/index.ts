@@ -53,6 +53,7 @@ export interface LlamaInstanceConfig {
   n_gpu_layers: number
   parallel: number
   batch_size: number
+  ubatch_size: number | null
   split_mode: string | null
   defrag_thold: number | null
   cache_type_k: string | null

@@ -32,6 +32,7 @@ type FormData = { name: string } & {
   n_gpu_layers: number
   parallel: number
   batch_size: number
+  ubatch_size: number | ''
   split_mode: string
   defrag_thold: number | ''
   cache_type_k: string
@@ -58,6 +59,7 @@ function defaultForm(): FormData {
     n_gpu_layers: 999,
     parallel: 4,
     batch_size: 512,
+    ubatch_size: '',
     split_mode: '',
     defrag_thold: '',
     cache_type_k: '',
@@ -98,6 +100,7 @@ function openEdit(instance: LlamaInstance) {
     n_gpu_layers: instance.config.n_gpu_layers,
     parallel: instance.config.parallel,
     batch_size: instance.config.batch_size,
+    ubatch_size: instance.config.ubatch_size ?? '',
     split_mode: instance.config.split_mode ?? '',
     defrag_thold: instance.config.defrag_thold ?? '',
     cache_type_k: instance.config.cache_type_k ?? '',
@@ -142,6 +145,7 @@ async function submit() {
         n_gpu_layers: form.n_gpu_layers,
         parallel: form.parallel,
         batch_size: form.batch_size,
+        ubatch_size: form.ubatch_size === '' ? null : Number(form.ubatch_size),
         split_mode: form.split_mode || null,
         defrag_thold: form.defrag_thold === '' ? null : Number(form.defrag_thold),
         cache_type_k: form.cache_type_k || null,
@@ -171,6 +175,7 @@ async function submit() {
         n_gpu_layers: form.n_gpu_layers,
         parallel: form.parallel,
         batch_size: form.batch_size,
+        ubatch_size: form.ubatch_size === '' ? null : Number(form.ubatch_size),
         split_mode: form.split_mode || null,
         defrag_thold: form.defrag_thold === '' ? null : Number(form.defrag_thold),
         cache_type_k: form.cache_type_k || null,
@@ -283,6 +288,10 @@ const cacheTypeOptions = [
             <div class="space-y-1.5">
               <Label>Batch Size</Label>
               <Input v-model="form.batch_size" type="number" />
+            </div>
+            <div class="space-y-1.5">
+              <Label>Ubatch Size <span class="text-muted-foreground text-xs">（選填）</span></Label>
+              <Input v-model="form.ubatch_size" type="number" placeholder="預設同 Batch Size" />
             </div>
             <div class="space-y-1.5">
               <Label>Threads <span class="text-muted-foreground text-xs">（選填）</span></Label>

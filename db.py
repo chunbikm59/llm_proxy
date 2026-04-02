@@ -58,6 +58,7 @@ class LlamaCppInstance(Base):
     n_gpu_layers         = Column(Integer, nullable=False, default=0)
     parallel             = Column(Integer, nullable=False, default=1)
     batch_size           = Column(Integer, nullable=False, default=512)
+    ubatch_size          = Column(Integer, nullable=True)
     split_mode           = Column(Text, nullable=True)
     defrag_thold         = Column(Float, nullable=True)
     cache_type_k         = Column(Text, nullable=True)

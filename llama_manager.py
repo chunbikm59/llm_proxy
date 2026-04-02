@@ -56,6 +56,7 @@ class InstanceCreateRequest(BaseModel):
     n_gpu_layers:         int = 0
     parallel:             int = 1
     batch_size:           int = 512
+    ubatch_size:          Optional[int] = None
     split_mode:           Optional[str] = None
     defrag_thold:         Optional[float] = None
     cache_type_k:         Optional[str] = None
@@ -83,6 +84,7 @@ class InstanceUpdateRequest(BaseModel):
     n_gpu_layers:         Optional[int]   = None
     parallel:             Optional[int]   = None
     batch_size:           Optional[int]   = None
+    ubatch_size:          Optional[int]   = None
     split_mode:           Optional[str]   = None
     defrag_thold:         Optional[float] = None
     cache_type_k:         Optional[str]   = None
@@ -114,6 +116,8 @@ def _build_cmd(config: dict) -> list[str]:
         "--parallel", str(config.get("parallel", 1)),
         "--batch-size", str(config.get("batch_size", 512)),
     ]
+    if config.get("ubatch_size") is not None:
+        cmd += ["--ubatch-size", str(config["ubatch_size"])]
     if config.get("n_threads") is not None:
         cmd += ["--threads", str(config["n_threads"])]
     if config.get("split_mode"):
@@ -152,6 +156,7 @@ def _state_to_dict(state: InstanceState) -> dict:
             "n_gpu_layers":         state.config["n_gpu_layers"],
             "parallel":             state.config.get("parallel", 1),
             "batch_size":           state.config.get("batch_size", 512),
+            "ubatch_size":          state.config.get("ubatch_size"),
             "split_mode":           state.config.get("split_mode"),
             "defrag_thold":         state.config.get("defrag_thold"),
             "cache_type_k":         state.config.get("cache_type_k"),
@@ -419,6 +424,7 @@ class LlamaCppManager:
                         n_gpu_layers=req.n_gpu_layers,
                         parallel=req.parallel,
                         batch_size=req.batch_size,
+                        ubatch_size=req.ubatch_size,
                         split_mode=req.split_mode,
                         defrag_thold=req.defrag_thold,
                         cache_type_k=req.cache_type_k,
