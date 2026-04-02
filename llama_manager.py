@@ -5,12 +5,13 @@ from collections import deque
 from dataclasses import dataclass, field
 from datetime import datetime, timezone, timedelta
 from enum import Enum
+from pathlib import Path
 from typing import Optional
 
 import httpx
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from db import get_db, LlamaCppInstance
 
@@ -66,6 +67,31 @@ class InstanceCreateRequest(BaseModel):
     auto_restart:         bool = False
     max_restart_attempts: int = 3
     startup_timeout:      int = 120
+
+
+class InstanceUpdateRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    executable_path:      Optional[str]   = None
+    model_path:           Optional[str]   = None
+    host:                 Optional[str]   = None
+    port:                 Optional[int]   = None
+    context_size:         Optional[int]   = None
+    n_threads:            Optional[int]   = None
+    n_gpu_layers:         Optional[int]   = None
+    parallel:             Optional[int]   = None
+    batch_size:           Optional[int]   = None
+    split_mode:           Optional[str]   = None
+    defrag_thold:         Optional[float] = None
+    cache_type_k:         Optional[str]   = None
+    cache_type_v:         Optional[str]   = None
+    flash_attn:           Optional[bool]  = None
+    cont_batching:        Optional[bool]  = None
+    no_webui:             Optional[bool]  = None
+    auto_start:           Optional[bool]  = None
+    auto_restart:         Optional[bool]  = None
+    max_restart_attempts: Optional[int]   = None
+    startup_timeout:      Optional[int]   = None
 
 
 # ── 工具函式 ──────────────────────────────────────────────────────────────────
@@ -196,30 +222,64 @@ class LlamaCppManager:
             kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
 
         cmd = _build_cmd(state.config)
-        proc = await asyncio.create_subprocess_exec(
-            *cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.STDOUT,
-            **kwargs,
-        )
-        state.proc = proc
-        state.pid = proc.pid
-        state.started_at = datetime.now(TZ_LOCAL).isoformat()
 
-        state.drain_task = asyncio.create_task(self._drain_stdout(state))
-        state.monitor_task = asyncio.create_task(self._monitor(state))
+        # 驗證執行檔存在
+        exe_path = state.config["executable_path"]
+        if not Path(exe_path).exists():
+            state.status = InstanceStatus.FAILED
+            state.log_buffer.append(f"[錯誤] 執行檔不存在: {exe_path}")
+            return
+
+        # 驗證模型檔案存在
+        model_path = state.config["model_path"]
+        if not Path(model_path).exists():
+            state.status = InstanceStatus.FAILED
+            state.log_buffer.append(f"[錯誤] 模型檔案不存在: {model_path}")
+            return
+
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.STDOUT,
+                **kwargs,
+            )
+            state.proc = proc
+            state.pid = proc.pid
+            state.started_at = datetime.now(TZ_LOCAL).isoformat()
+
+            state.drain_task = asyncio.create_task(self._drain_stdout(state))
+            state.monitor_task = asyncio.create_task(self._monitor(state))
+        except FileNotFoundError as e:
+            state.status = InstanceStatus.FAILED
+            state.log_buffer.append(f"[錯誤] 無法啟動進程: {str(e)}")
+        except Exception as e:
+            state.status = InstanceStatus.FAILED
+            state.log_buffer.append(f"[錯誤] 啟動異常: {str(e)}")
 
     # ── 讀取 stdout（防 pipe buffer deadlock）────────────────────────────────
 
     async def _drain_stdout(self, state: InstanceState):
+        """讀取 stdout，確保即使進程崩潰也能保存日誌"""
         try:
             while True:
-                line = await state.proc.stdout.readline()
-                if not line:
-                    break
-                state.log_buffer.append(line.decode("utf-8", errors="replace").rstrip())
-        except Exception:
-            pass
+                try:
+                    line = await asyncio.wait_for(
+                        state.proc.stdout.readline(),
+                        timeout=5.0  # 防止卡住
+                    )
+                    if not line:
+                        break
+                    decoded = line.decode("utf-8", errors="replace").rstrip()
+                    state.log_buffer.append(decoded)
+                except asyncio.TimeoutError:
+                    # 5 秒無新行，記錄一個佔位符方便診斷
+                    if state.proc.returncode is not None:
+                        break
+                    continue
+        except Exception as e:
+            # 記錄異常但不中斷
+            state.log_buffer.append(f"[DRAIN ERROR] {str(e)}")
 
     # ── 監控 ─────────────────────────────────────────────────────────────────
 
@@ -246,6 +306,15 @@ class LlamaCppManager:
 
         if not ready:
             state.status = InstanceStatus.FAILED
+            # 記錄診斷訊息到日誌（先確保緩衝是否有內容）
+            await asyncio.sleep(0.5)  # 等待最後的日誌行被寫入
+
+            if state.proc.returncode is not None:
+                state.log_buffer.append(f"[診斷] 進程已退出 (exit code: {state.proc.returncode})")
+            else:
+                state.log_buffer.append(f"[診斷] 超時 {timeout} 秒未收到健康檢查回應")
+                state.log_buffer.append(f"[診斷] 檢查地址: {health_url}")
+
             await self._force_kill(state)
             return
 
@@ -372,7 +441,11 @@ class LlamaCppManager:
             self._instances[req.name] = state
 
             if req.auto_start:
-                await self._start_instance(req.name)
+                try:
+                    await self._start_instance(req.name)
+                except Exception as e:
+                    state.status = InstanceStatus.FAILED
+                    state.log_buffer.append(f"[錯誤] 啟動失敗: {str(e)}")
 
             return _state_to_dict(state)
 
@@ -420,6 +493,47 @@ class LlamaCppManager:
         await self._start_instance(name)
         return _state_to_dict(state)
 
+    async def update_instance(self, name: str, req: InstanceUpdateRequest, restart: bool = False) -> dict:
+        async with self._lock:
+            if name not in self._instances:
+                raise HTTPException(status_code=404, detail=f"Instance '{name}' not found")
+            state = self._instances[name]
+            now = datetime.now(TZ_LOCAL).isoformat()
+            fields = req.model_fields_set  # 只更新明確傳入的欄位
+
+            def _write():
+                db = get_db()
+                try:
+                    row = db.query(LlamaCppInstance).filter(LlamaCppInstance.name == name).first()
+                    if not row:
+                        raise HTTPException(status_code=404, detail=f"Instance '{name}' not found in DB")
+                    for field_name in fields:
+                        val = getattr(req, field_name)
+                        if field_name in ('flash_attn', 'cont_batching', 'no_webui', 'auto_start', 'auto_restart'):
+                            val = int(val) if val is not None else None
+                        setattr(row, field_name, val)
+                    row.updated_at = now
+                    db.commit()
+                    return {c.name: getattr(row, c.name) for c in LlamaCppInstance.__table__.columns}
+                except Exception:
+                    db.rollback()
+                    raise
+                finally:
+                    db.close()
+
+            cfg = await asyncio.to_thread(_write)
+            for k in fields:
+                state.config[k] = cfg[k]
+            state.config['updated_at'] = now
+
+        if restart:
+            await self._stop_instance(name, remove=False)
+            state = self._instances[name]
+            state.restart_count = 0
+            await self._start_instance(name)
+
+        return _state_to_dict(self._instances[name])
+
     def get_logs(self, name: str, lines: int = 100) -> list[str]:
         state = self._instances.get(name)
         if not state:
@@ -440,7 +554,12 @@ def _manager(request: Request) -> LlamaCppManager:
 @router.post("/instances", status_code=201)
 async def create_instance(body: InstanceCreateRequest, request: Request):
     """建立一個新的 llama.cpp 實例"""
-    return await _manager(request).create_instance(body)
+    try:
+        return await _manager(request).create_instance(body)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Failed to create instance: {str(e)}")
 
 
 @router.get("/instances")
@@ -470,7 +589,28 @@ async def stop_instance(name: str, request: Request):
 @router.post("/instances/{name}/restart")
 async def restart_instance(name: str, request: Request):
     """重新啟動一個 llama.cpp 實例"""
-    return await _manager(request).restart_instance(name)
+    try:
+        return await _manager(request).restart_instance(name)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Failed to restart instance: {str(e)}")
+
+
+@router.patch("/instances/{name}")
+async def update_instance(
+    name: str,
+    body: InstanceUpdateRequest,
+    request: Request,
+    restart: bool = False,
+):
+    """更新 llama.cpp 實例設定。?restart=true 時更新後自動重啟"""
+    try:
+        return await _manager(request).update_instance(name, body, restart=restart)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Failed to update instance: {str(e)}")
 
 
 @router.get("/instances/{name}/logs")

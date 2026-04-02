@@ -5,12 +5,13 @@ import AppSidebar from '@/components/layout/AppSidebar.vue'
 import KeysView from '@/views/KeysView.vue'
 import UsageView from '@/views/UsageView.vue'
 import MonitoringView from '@/views/MonitoringView.vue'
+import LlamaView from '@/views/LlamaView.vue'
 import { AlertDialog } from '@/components/ui/alert-dialog'
 import { useConfirmDialog } from '@/composables/useConfirmDialog'
 import { useKeys } from '@/composables/useKeys'
 import { useRates } from '@/composables/useRates'
 
-type Page = 'keys' | 'usage' | 'monitor'
+type Page = 'keys' | 'usage' | 'monitor' | 'llama'
 
 const currentPage = ref<Page>('keys')
 const { visible, title, description, onConfirm, onCancel } = useConfirmDialog()
@@ -36,6 +37,7 @@ onMounted(() => keysState.fetchKeys())
         :reset-rates="resetRates"
       />
       <MonitoringView v-else-if="currentPage === 'monitor'" />
+      <LlamaView v-else-if="currentPage === 'llama'" />
     </main>
   </div>
 

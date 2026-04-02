@@ -6,8 +6,12 @@ interface Props {
   class?: string
   hideClose?: boolean
   maxWidth?: string
+  disableOverlayClose?: boolean
 }
-const props = withDefaults(defineProps<Props>(), { maxWidth: 'max-w-lg' })
+const props = withDefaults(defineProps<Props>(), {
+  maxWidth: 'max-w-lg',
+  disableOverlayClose: false,
+})
 const emit = defineEmits<{ close: [] }>()
 </script>
 
@@ -15,7 +19,7 @@ const emit = defineEmits<{ close: [] }>()
   <!-- Overlay -->
   <div
     class="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4"
-    @click.self="emit('close')"
+    @click.self="!props.disableOverlayClose && emit('close')"
   >
     <!-- Content -->
     <div
