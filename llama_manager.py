@@ -14,6 +14,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict
 
 from db import get_db, LlamaCppInstance
+from process_utils import bind_to_parent_job
 
 TZ_LOCAL = timezone(timedelta(hours=8))
 
@@ -259,7 +260,7 @@ class LlamaCppManager:
             state.proc = proc
             state.pid = proc.pid
             state.started_at = datetime.now(TZ_LOCAL).isoformat()
-
+            bind_to_parent_job(proc.pid)
             state.drain_task = asyncio.create_task(self._drain_stdout(state))
             state.monitor_task = asyncio.create_task(self._monitor(state))
         except FileNotFoundError as e:

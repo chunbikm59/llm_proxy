@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { KeyRound, ChartColumnBig, Activity, Server } from 'lucide-vue-next'
+import { KeyRound, ChartColumnBig, Activity, Server, Mic2 } from 'lucide-vue-next'
 import { Separator } from '@/components/ui/separator'
 
-type Page = 'keys' | 'usage' | 'monitor' | 'llama'
+type Page = 'keys' | 'usage' | 'monitor' | 'llama' | 'whisper'
 
 interface Props { currentPage: Page }
 defineProps<Props>()
@@ -13,6 +13,7 @@ const navItems: { id: Page; label: string; icon: typeof KeyRound }[] = [
   { id: 'usage', label: '用量分析', icon: ChartColumnBig },
   { id: 'monitor', label: '系統監控', icon: Activity },
   { id: 'llama', label: 'llama.cpp 管理', icon: Server },
+  { id: 'whisper', label: 'Whisper 管理', icon: Mic2 },
 ]
 </script>
 

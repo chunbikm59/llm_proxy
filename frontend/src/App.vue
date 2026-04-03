@@ -6,12 +6,13 @@ import KeysView from '@/views/KeysView.vue'
 import UsageView from '@/views/UsageView.vue'
 import MonitoringView from '@/views/MonitoringView.vue'
 import LlamaView from '@/views/LlamaView.vue'
+import WhisperView from '@/views/WhisperView.vue'
 import { AlertDialog } from '@/components/ui/alert-dialog'
 import { useConfirmDialog } from '@/composables/useConfirmDialog'
 import { useKeys } from '@/composables/useKeys'
 import { useRates } from '@/composables/useRates'
 
-type Page = 'keys' | 'usage' | 'monitor' | 'llama'
+type Page = 'keys' | 'usage' | 'monitor' | 'llama' | 'whisper'
 
 const currentPage = ref<Page>('keys')
 const { visible, title, description, onConfirm, onCancel } = useConfirmDialog()
@@ -38,6 +39,7 @@ onMounted(() => keysState.fetchKeys())
       />
       <MonitoringView v-else-if="currentPage === 'monitor'" />
       <LlamaView v-else-if="currentPage === 'llama'" />
+      <WhisperView v-else-if="currentPage === 'whisper'" />
     </main>
   </div>
 

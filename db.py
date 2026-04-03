@@ -76,6 +76,41 @@ class LlamaCppInstance(Base):
     updated_at           = Column(Text, nullable=False)
 
 
+class WhisperCluster(Base):
+    __tablename__ = "whisper_clusters"
+
+    id              = Column(Integer, primary_key=True, autoincrement=True)
+    name            = Column(Text, unique=True, nullable=False)
+    executable_path = Column(Text, nullable=False)
+    model_path      = Column(Text, nullable=False)
+    n_threads       = Column(Integer, nullable=True)
+    n_processors    = Column(Integer, nullable=True)
+    beam_size       = Column(Integer, nullable=True)
+    best_of         = Column(Integer, nullable=True)
+    audio_ctx       = Column(Integer, nullable=True)
+    max_instances   = Column(Integer, nullable=False, default=2)
+    is_default      = Column(Integer, nullable=False, default=0)
+    is_active       = Column(Integer, nullable=False, default=1)
+    created_at      = Column(Text, nullable=False)
+    updated_at      = Column(Text, nullable=False)
+
+
+class WhisperTranscriptionJob(Base):
+    __tablename__ = "whisper_transcription_jobs"
+
+    id                 = Column(Integer, primary_key=True, autoincrement=True)
+    cluster_name       = Column(Text, nullable=True)
+    filename           = Column(Text, nullable=False)
+    language           = Column(Text, nullable=True)
+    audio_duration_ms  = Column(Integer, nullable=True)
+    processing_time_ms = Column(Integer, nullable=True)
+    status             = Column(Text, nullable=False, default="pending")
+    response_format    = Column(Text, nullable=False, default="json")
+    error_message      = Column(Text, nullable=True)
+    created_at         = Column(Text, nullable=False)
+    completed_at       = Column(Text, nullable=True)
+
+
 engine = create_engine(DATABASE_URL)
 
 SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)

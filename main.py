@@ -11,7 +11,8 @@ from fastapi.staticfiles import StaticFiles
 
 from db import init_db, LlamaCppInstance
 from llama_manager import LlamaCppManager, router as llama_router
-from routers import keys, monitoring, proxy
+from whisper_manager import WhisperCppManager, router as whisper_router
+from routers import keys, monitoring, proxy, whisper_transcription
 
 LITELLM_BASE_URL = "http://localhost:4000"
 LITELLM_CONFIG = Path(__file__).parent / "litellm_config.yaml"
@@ -57,8 +58,13 @@ async def lifespan(app: FastAPI):
         app.state.llama_manager = manager
         await manager.startup()
 
+        whisper_mgr = WhisperCppManager()
+        app.state.whisper_manager = whisper_mgr
+        await whisper_mgr.startup()
+
         yield
 
+        await whisper_mgr.shutdown()
         await manager.shutdown()
 
     # ── Shutdown：優雅停止 LiteLLM ───────────────────────────────────────────
@@ -88,6 +94,8 @@ def serve_frontend():
 app.include_router(keys.router)
 app.include_router(monitoring.router)
 app.include_router(llama_router)
+app.include_router(whisper_router)
+app.include_router(whisper_transcription.router)
 app.include_router(proxy.router)
 
 

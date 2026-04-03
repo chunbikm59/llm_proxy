@@ -77,6 +77,39 @@ export interface LlamaInstance {
   config: LlamaInstanceConfig
 }
 
+export interface WhisperClusterConfig {
+  executable_path: string
+  model_path: string
+  n_threads: number | null
+  n_processors: number | null
+  beam_size: number | null
+  best_of: number | null
+  audio_ctx: number | null
+  max_instances: number
+  is_default: boolean
+}
+
+export interface WhisperCluster {
+  name: string
+  status: 'stopped' | 'running' | 'failed'
+  active_count: number
+  config: WhisperClusterConfig
+}
+
+export interface WhisperTranscriptionJob {
+  id: number
+  cluster_name: string | null
+  filename: string
+  language: string | null
+  audio_duration_ms: number | null
+  processing_time_ms: number | null
+  status: 'pending' | 'processing' | 'done' | 'failed'
+  response_format: string
+  error_message: string | null
+  created_at: string
+  completed_at: string | null
+}
+
 // ─── API layer ────────────────────────────────────────────────────────────────
 
 async function _fetch<T>(path: string, opts: RequestInit = {}): Promise<T> {
@@ -122,4 +155,21 @@ export const api = {
       method: 'PATCH',
       body: JSON.stringify(body),
     }),
+
+  // Whisper cluster management
+  listWhisperClusters: () => _fetch<WhisperCluster[]>('/whisper/clusters'),
+  getWhisperCluster: (name: string) => _fetch<WhisperCluster>(`/whisper/clusters/${name}`),
+  createWhisperCluster: (body: { name: string } & WhisperClusterConfig) =>
+    _fetch<WhisperCluster>('/whisper/clusters', { method: 'POST', body: JSON.stringify(body) }),
+  deleteWhisperCluster: (name: string) =>
+    _fetch<null>(`/whisper/clusters/${name}`, { method: 'DELETE' }),
+  getWhisperClusterLogs: (name: string, lines = 100) =>
+    _fetch<string[]>(`/whisper/clusters/${name}/logs?lines=${lines}`),
+  updateWhisperCluster: (name: string, body: Partial<WhisperClusterConfig>) =>
+    _fetch<WhisperCluster>(`/whisper/clusters/${name}`, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    }),
+  listTranscriptionJobs: (limit = 50, offset = 0) =>
+    _fetch<WhisperTranscriptionJob[]>(`/whisper/jobs?limit=${limit}&offset=${offset}`),
 }
