@@ -15,10 +15,12 @@ export interface ApiKey {
 export interface UsageRow {
   date: string
   model: string
+  request_type: string
   input_tokens: number
   output_tokens: number
   total_tokens: number
   cost_usd: number
+  audio_duration_ms: number | null
   requests: number
   key_id?: number
   key_name?: string

@@ -12,9 +12,11 @@ from typing import AsyncGenerator, Optional
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, ConfigDict
 
-from db import get_db, WhisperCluster, WhisperTranscriptionJob
+from db import get_db, WhisperCluster, WhisperTranscriptionJob, UsageLog, ApiKey
 
 TZ_LOCAL = timezone(timedelta(hours=8))
+
+WHISPER_MODEL_NAME = "whisper-1"
 
 
 # ── 音訊格式工具 ──────────────────────────────────────────────────────────────
@@ -80,6 +82,25 @@ async def _ensure_wav_16k(audio_bytes: bytes, filename: str) -> tuple[bytes, str
 
     stem = Path(filename).stem
     return wav_bytes, f"{stem}.wav"
+
+
+def _wav_duration_ms(wav_bytes: bytes) -> int | None:
+    """從標準 WAV header 讀出音訊長度（ms），不依賴 ffprobe。"""
+    import struct
+    try:
+        if len(wav_bytes) < 44:
+            return None
+        num_channels    = struct.unpack_from('<H', wav_bytes, 22)[0]
+        sample_rate     = struct.unpack_from('<I', wav_bytes, 24)[0]
+        bits_per_sample = struct.unpack_from('<H', wav_bytes, 34)[0]
+        data_size       = struct.unpack_from('<I', wav_bytes, 40)[0]
+        if sample_rate == 0 or bits_per_sample == 0 or num_channels == 0:
+            return None
+        bytes_per_sample = bits_per_sample // 8
+        total_samples = data_size // (num_channels * bytes_per_sample)
+        return int(total_samples / sample_rate * 1000)
+    except Exception:
+        return None
 
 
 # ── 資料結構 ──────────────────────────────────────────────────────────────────
@@ -275,6 +296,7 @@ class WhisperCppManager:
         filename: str,
         params: dict,
         cluster_name: str | None = None,
+        api_key: str | None = None,
     ) -> AsyncGenerator[str, None]:
         """
         執行轉錄，每個 confirmed segment（整行 \\n）yield 一次原始輸出。
@@ -320,6 +342,7 @@ class WhisperCppManager:
 
         try:
             audio_bytes, wav_filename = await _ensure_wav_16k(audio_bytes, filename)
+            duration_ms = _wav_duration_ms(audio_bytes)
 
             with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
                 f.write(audio_bytes)
@@ -387,8 +410,28 @@ class WhisperCppManager:
                     if row:
                         row.status = "done"
                         row.processing_time_ms = elapsed_ms
+                        row.audio_duration_ms = duration_ms
                         row.completed_at = completed_at
-                        db.commit()
+                    # 寫入 UsageLog
+                    log = UsageLog(
+                        api_key=api_key or "",
+                        model=WHISPER_MODEL_NAME,
+                        request_type="audio",
+                        date=datetime.now(TZ_LOCAL).strftime("%Y-%m-%d"),
+                        input_tokens=0,
+                        output_tokens=0,
+                        total_tokens=0,
+                        cost_usd=0.0,
+                        audio_duration_ms=duration_ms,
+                        created_at=completed_at,
+                    )
+                    db.add(log)
+                    # 更新 ApiKey 累計 request 數
+                    if api_key:
+                        key_row = db.query(ApiKey).filter(ApiKey.key == api_key).first()
+                        if key_row:
+                            key_row.total_requests += 1
+                    db.commit()
                 except Exception:
                     db.rollback()
                 finally:
@@ -427,10 +470,11 @@ class WhisperCppManager:
         filename: str,
         params: dict,
         cluster_name: str | None = None,
+        api_key: str | None = None,
     ) -> dict:
         """非串流版：等轉錄完成，回傳完整結果"""
         segments: list[str] = []
-        async for line in self.transcribe_stream(audio_bytes, filename, params, cluster_name):
+        async for line in self.transcribe_stream(audio_bytes, filename, params, cluster_name, api_key):
             segments.append(line)
         return {"text": "\n".join(segments)}
 

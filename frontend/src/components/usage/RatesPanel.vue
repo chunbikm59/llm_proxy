@@ -18,7 +18,7 @@ const emit = defineEmits<{ reset: [] }>()
           恢復預設
         </Button>
       </div>
-      <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div class="grid grid-cols-1 sm:grid-cols-4 gap-4">
         <div class="space-y-1.5">
           <Label class="text-xs text-muted-foreground">Chat Input</Label>
           <div class="flex items-center gap-1.5">
@@ -41,6 +41,14 @@ const emit = defineEmits<{ reset: [] }>()
             <span class="text-muted-foreground text-sm">$</span>
             <Input type="number" :model-value="rates.embed_input" min="0" step="0.01"
               @update:model-value="rates.embed_input = Number($event)" />
+          </div>
+        </div>
+        <div class="space-y-1.5">
+          <Label class="text-xs text-muted-foreground">Audio（/ min）</Label>
+          <div class="flex items-center gap-1.5">
+            <span class="text-muted-foreground text-sm">$</span>
+            <Input type="number" :model-value="rates.audio_per_minute" min="0" step="0.001"
+              @update:model-value="rates.audio_per_minute = Number($event)" />
           </div>
         </div>
       </div>

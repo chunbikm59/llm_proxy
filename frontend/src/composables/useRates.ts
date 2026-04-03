@@ -7,6 +7,7 @@ export const DEFAULT_RATES: Rates = {
   chat_input: 0.40,
   chat_output: 3.20,
   embed_input: 0.13,
+  audio_per_minute: 0.006,
 }
 
 function load(): Rates {

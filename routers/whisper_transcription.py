@@ -44,8 +44,10 @@ async def audio_transcriptions(
     }
 
     if stream:
+        api_key: str = key_info["key"]
+
         async def gen():
-            agen = mgr.transcribe_stream(audio_bytes, filename, params, cluster_name=cluster)
+            agen = mgr.transcribe_stream(audio_bytes, filename, params, cluster_name=cluster, api_key=api_key)
             try:
                 async for segment_line in agen:
                     yield json.dumps({"text": segment_line}, ensure_ascii=False) + "\n"
@@ -58,7 +60,7 @@ async def audio_transcriptions(
 
     # 非串流：等全部完成
     try:
-        result = await mgr.transcribe(audio_bytes, filename, params, cluster_name=cluster)
+        result = await mgr.transcribe(audio_bytes, filename, params, cluster_name=cluster, api_key=key_info["key"])
     except HTTPException:
         raise
     except Exception as e:

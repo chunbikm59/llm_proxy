@@ -36,11 +36,12 @@ class UsageLog(Base):
     model         = Column(Text, nullable=False)
     request_type  = Column(Text, nullable=False, default="chat")
     date          = Column(Text, nullable=False, index=True)
-    input_tokens  = Column(Integer, nullable=False, default=0)
-    output_tokens = Column(Integer, nullable=False, default=0)
-    total_tokens  = Column(Integer, nullable=False, default=0)
-    cost_usd      = Column(Float, nullable=False, default=0.0)
-    created_at    = Column(Text, nullable=False)
+    input_tokens      = Column(Integer, nullable=False, default=0)
+    output_tokens     = Column(Integer, nullable=False, default=0)
+    total_tokens      = Column(Integer, nullable=False, default=0)
+    cost_usd          = Column(Float, nullable=False, default=0.0)
+    audio_duration_ms = Column(Integer, nullable=True)
+    created_at        = Column(Text, nullable=False)
 
 
 class LlamaCppInstance(Base):

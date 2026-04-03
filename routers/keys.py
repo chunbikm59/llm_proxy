@@ -55,11 +55,12 @@ def all_usage(
     try:
         q = (
             db.query(
-                UsageLog.date, UsageLog.model,
+                UsageLog.date, UsageLog.model, UsageLog.request_type,
                 func.sum(UsageLog.input_tokens).label("input_tokens"),
                 func.sum(UsageLog.output_tokens).label("output_tokens"),
                 func.sum(UsageLog.total_tokens).label("total_tokens"),
                 func.sum(UsageLog.cost_usd).label("cost_usd"),
+                func.sum(UsageLog.audio_duration_ms).label("audio_duration_ms"),
                 func.count().label("requests"),
                 ApiKey.id.label("key_id"),
                 ApiKey.name.label("key_name"),
@@ -71,7 +72,7 @@ def all_usage(
         if end:
             q = q.filter(UsageLog.date <= end)
         rows = (
-            q.group_by(UsageLog.date, UsageLog.model, ApiKey.id, ApiKey.name)
+            q.group_by(UsageLog.date, UsageLog.model, UsageLog.request_type, ApiKey.id, ApiKey.name)
             .order_by(UsageLog.date.desc())
             .all()
         )
@@ -90,15 +91,16 @@ def key_usage(key_id: int):
             raise HTTPException(status_code=404, detail="Key not found")
         rows = (
             db.query(
-                UsageLog.date, UsageLog.model,
+                UsageLog.date, UsageLog.model, UsageLog.request_type,
                 func.sum(UsageLog.input_tokens).label("input_tokens"),
                 func.sum(UsageLog.output_tokens).label("output_tokens"),
                 func.sum(UsageLog.total_tokens).label("total_tokens"),
                 func.sum(UsageLog.cost_usd).label("cost_usd"),
+                func.sum(UsageLog.audio_duration_ms).label("audio_duration_ms"),
                 func.count().label("requests"),
             )
             .filter(UsageLog.api_key == key_row.key)
-            .group_by(UsageLog.date, UsageLog.model)
+            .group_by(UsageLog.date, UsageLog.model, UsageLog.request_type)
             .order_by(UsageLog.date.desc())
             .all()
         )

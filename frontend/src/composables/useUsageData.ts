@@ -40,7 +40,7 @@ export function useUsageData(rates: Rates) {
       .filter(r => {
         if (r.date < dates.start || r.date > dates.end) return false
         if (filterKeys.value.length && !filterKeys.value.includes(r.key_id!)) return false
-        const type = getModelType(r.model)
+        const type = getModelType(r.model, r.request_type)
         if (filterType.value && type !== filterType.value) return false
         if (filterModels.value.length && !filterModels.value.includes(r.model)) return false
         return true

@@ -34,6 +34,7 @@ const modelOptions = computed(() => availableModels.value.map(m => ({ value: m, 
 const filterTypeOptions = [
   { value: 'chat', label: 'Chat' },
   { value: 'embedding', label: 'Embedding' },
+  { value: 'audio', label: 'Audio' },
 ]
 
 onMounted(async () => {
@@ -147,8 +148,8 @@ watch([() => dates.start, () => dates.end], () => {
               <TableCell class="font-mono text-xs">{{ r.date }}</TableCell>
               <TableCell class="text-xs text-muted-foreground">{{ r.model }}</TableCell>
               <TableCell>
-                <Badge :variant="getModelType(r.model) === 'chat' ? 'info' : 'secondary'" class="text-xs">
-                  {{ getModelType(r.model) === 'chat' ? 'Chat' : 'Embed' }}
+                <Badge :variant="getModelType(r.model, r.request_type) === 'chat' ? 'info' : getModelType(r.model, r.request_type) === 'audio' ? 'success' : 'secondary'" class="text-xs">
+                  {{ getModelType(r.model, r.request_type) === 'chat' ? 'Chat' : getModelType(r.model, r.request_type) === 'audio' ? 'Audio' : 'Embed' }}
                 </Badge>
               </TableCell>
               <TableCell class="text-xs">{{ r.key_name }}</TableCell>
