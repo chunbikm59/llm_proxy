@@ -154,7 +154,7 @@ watch([() => dates.start, () => dates.end], () => {
               </TableCell>
               <TableCell class="text-xs">{{ r.key_name }}</TableCell>
               <template v-if="getModelType(r.model, r.request_type) === 'audio'">
-                <TableCell class="text-right font-mono text-xs text-muted-foreground" colspan="3">
+                <TableCell class="text-right font-mono text-xs text-muted-foreground" :colspan="3">
                   {{ r.audio_duration_ms != null ? ((r.audio_duration_ms / 60000).toFixed(2) + ' min') : '—' }}
                 </TableCell>
               </template>
