@@ -153,9 +153,16 @@ watch([() => dates.start, () => dates.end], () => {
                 </Badge>
               </TableCell>
               <TableCell class="text-xs">{{ r.key_name }}</TableCell>
-              <TableCell class="text-right font-mono text-xs">{{ fmtNum(r.input_tokens) }}</TableCell>
-              <TableCell class="text-right font-mono text-xs">{{ fmtNum(r.output_tokens) }}</TableCell>
-              <TableCell class="text-right font-mono text-xs">{{ fmtNum(r.total_tokens) }}</TableCell>
+              <template v-if="getModelType(r.model, r.request_type) === 'audio'">
+                <TableCell class="text-right font-mono text-xs text-muted-foreground" colspan="3">
+                  {{ r.audio_duration_ms != null ? ((r.audio_duration_ms / 60000).toFixed(2) + ' min') : '—' }}
+                </TableCell>
+              </template>
+              <template v-else>
+                <TableCell class="text-right font-mono text-xs">{{ fmtNum(r.input_tokens) }}</TableCell>
+                <TableCell class="text-right font-mono text-xs">{{ fmtNum(r.output_tokens) }}</TableCell>
+                <TableCell class="text-right font-mono text-xs">{{ fmtNum(r.total_tokens) }}</TableCell>
+              </template>
               <TableCell class="text-right font-mono text-xs">{{ r.requests || 1 }}</TableCell>
               <TableCell class="text-right font-mono text-xs text-amber-600">
                 {{ fmtCost(calcCost(r, rates)) }}

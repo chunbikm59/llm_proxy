@@ -71,6 +71,15 @@ function formatDuration(ms: number | null): string {
   return `${(ms / 1000).toFixed(1)}s`
 }
 
+function formatAudioDuration(ms: number | null): string {
+  if (ms === null || ms === undefined) return '—'
+  const totalSec = Math.round(ms / 1000)
+  const m = Math.floor(totalSec / 60)
+  const s = totalSec % 60
+  if (m === 0) return `${s}s`
+  return `${m}m ${s}s`
+}
+
 function jobStatusVariant(status: WhisperTranscriptionJob['status']): StatusVariant {
   switch (status) {
     case 'done':       return 'success'
@@ -219,6 +228,7 @@ function jobStatusLabel(status: WhisperTranscriptionJob['status']): string {
           <TableRow>
             <TableHead>時間</TableHead>
             <TableHead>檔名</TableHead>
+            <TableHead>音訊長度</TableHead>
             <TableHead>處理時間</TableHead>
             <TableHead>狀態</TableHead>
             <TableHead>Cluster</TableHead>
@@ -226,7 +236,7 @@ function jobStatusLabel(status: WhisperTranscriptionJob['status']): string {
           </TableRow>
         </TableHeader>
         <TableBody>
-          <TableEmpty v-if="jobs.length === 0" :colspan="6">
+          <TableEmpty v-if="jobs.length === 0" :colspan="7">
             <p class="text-center text-muted-foreground py-4">尚無轉錄記錄</p>
           </TableEmpty>
           <TableRow v-for="job in jobs" :key="job.id">
@@ -236,6 +246,7 @@ function jobStatusLabel(status: WhisperTranscriptionJob['status']): string {
             <TableCell class="text-xs max-w-32 truncate" :title="job.filename">
               {{ job.filename }}
             </TableCell>
+            <TableCell class="text-xs font-mono">{{ formatAudioDuration(job.audio_duration_ms) }}</TableCell>
             <TableCell class="text-xs font-mono">{{ formatDuration(job.processing_time_ms) }}</TableCell>
             <TableCell>
               <Badge :variant="jobStatusVariant(job.status)" class="text-xs">

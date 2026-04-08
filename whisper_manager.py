@@ -85,15 +85,31 @@ async def _ensure_wav_16k(audio_bytes: bytes, filename: str) -> tuple[bytes, str
 
 
 def _wav_duration_ms(wav_bytes: bytes) -> int | None:
-    """從標準 WAV header 讀出音訊長度（ms），不依賴 ffprobe。"""
+    """從 WAV 檔掃描 chunk 取得音訊長度（ms），支援 ffmpeg 輸出的非標準佈局。"""
     import struct
     try:
-        if len(wav_bytes) < 44:
+        if len(wav_bytes) < 44 or wav_bytes[:4] != b'RIFF' or wav_bytes[8:12] != b'WAVE':
             return None
-        num_channels    = struct.unpack_from('<H', wav_bytes, 22)[0]
-        sample_rate     = struct.unpack_from('<I', wav_bytes, 24)[0]
-        bits_per_sample = struct.unpack_from('<H', wav_bytes, 34)[0]
-        data_size       = struct.unpack_from('<I', wav_bytes, 40)[0]
+        # 從 fmt chunk 取得音訊參數
+        num_channels = sample_rate = bits_per_sample = None
+        pos = 12
+        data_size = None
+        while pos + 8 <= len(wav_bytes):
+            chunk_id = wav_bytes[pos:pos+4]
+            chunk_size = struct.unpack_from('<I', wav_bytes, pos+4)[0]
+            if chunk_id == b'fmt ':
+                if chunk_size >= 16:
+                    num_channels    = struct.unpack_from('<H', wav_bytes, pos+10)[0]
+                    sample_rate     = struct.unpack_from('<I', wav_bytes, pos+12)[0]
+                    bits_per_sample = struct.unpack_from('<H', wav_bytes, pos+22)[0]
+            elif chunk_id == b'data':
+                data_size = chunk_size
+                break
+            pos += 8 + chunk_size
+            if chunk_size % 2:  # WAV chunks 對齊到偶數位元組
+                pos += 1
+        if None in (num_channels, sample_rate, bits_per_sample, data_size):
+            return None
         if sample_rate == 0 or bits_per_sample == 0 or num_channels == 0:
             return None
         bytes_per_sample = bits_per_sample // 8
