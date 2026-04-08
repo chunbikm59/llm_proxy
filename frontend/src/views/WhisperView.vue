@@ -172,14 +172,6 @@ function jobStatusLabel(status: WhisperTranscriptionJob['status']): string {
               <Button
                 variant="ghost"
                 size="icon-sm"
-                title="查看日誌"
-                @click="logsDialog?.open(c.name)"
-              >
-                <ScrollText class="h-3.5 w-3.5" />
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon-sm"
                 title="刪除"
                 class="text-destructive hover:text-destructive"
                 @click="deleteCluster(c.name)"
@@ -233,10 +225,11 @@ function jobStatusLabel(status: WhisperTranscriptionJob['status']): string {
             <TableHead>狀態</TableHead>
             <TableHead>Cluster</TableHead>
             <TableHead>錯誤</TableHead>
+            <TableHead class="text-right">日誌</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
-          <TableEmpty v-if="jobs.length === 0" :colspan="7">
+          <TableEmpty v-if="jobs.length === 0" :colspan="8">
             <p class="text-center text-muted-foreground py-4">尚無轉錄記錄</p>
           </TableEmpty>
           <TableRow v-for="job in jobs" :key="job.id">
@@ -256,6 +249,17 @@ function jobStatusLabel(status: WhisperTranscriptionJob['status']): string {
             <TableCell class="text-xs text-muted-foreground">{{ job.cluster_name ?? '—' }}</TableCell>
             <TableCell class="text-xs text-destructive max-w-40 truncate" :title="job.error_message ?? ''">
               {{ job.error_message ?? '' }}
+            </TableCell>
+            <TableCell class="text-right">
+              <Button
+                v-if="job.cluster_name"
+                variant="ghost"
+                size="icon-sm"
+                title="查看 Cluster 日誌"
+                @click="logsDialog?.open(job.cluster_name!)"
+              >
+                <ScrollText class="h-3.5 w-3.5" />
+              </Button>
             </TableCell>
           </TableRow>
         </TableBody>
