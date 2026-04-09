@@ -103,7 +103,11 @@ def _wav_duration_ms(wav_bytes: bytes) -> int | None:
                     sample_rate     = struct.unpack_from('<I', wav_bytes, pos+12)[0]
                     bits_per_sample = struct.unpack_from('<H', wav_bytes, pos+22)[0]
             elif chunk_id == b'data':
-                data_size = chunk_size
+                # ffmpeg 經 pipe 輸出時無法預知大小，會填入 0xFFFFFFFF 作為 placeholder
+                if chunk_size == 0xFFFFFFFF:
+                    data_size = len(wav_bytes) - (pos + 8)
+                else:
+                    data_size = chunk_size
                 break
             pos += 8 + chunk_size
             if chunk_size % 2:  # WAV chunks 對齊到偶數位元組
