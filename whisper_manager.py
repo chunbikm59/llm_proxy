@@ -376,6 +376,7 @@ class WhisperCppManager:
                     ).first()
                     if row:
                         row.status = "processing"
+                        row.audio_duration_ms = duration_ms
                         db.commit()
                 except Exception:
                     db.rollback()
