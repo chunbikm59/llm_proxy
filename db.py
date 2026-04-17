@@ -1,7 +1,7 @@
 import os
 
 from dotenv import load_dotenv
-from sqlalchemy import Column, Float, Integer, Text, create_engine
+from sqlalchemy import Column, Float, Integer, Text, create_engine, text
 from sqlalchemy.types import JSON
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
@@ -72,6 +72,7 @@ class LlamaCppInstance(Base):
     auto_restart         = Column(Integer, nullable=False, default=0)
     max_restart_attempts = Column(Integer, nullable=False, default=3)
     startup_timeout      = Column(Integer, nullable=False, default=120)
+    manually_stopped     = Column(Integer, nullable=False, default=0)
     is_active            = Column(Integer, nullable=False, default=1)
     created_at           = Column(Text, nullable=False)
     updated_at           = Column(Text, nullable=False)
@@ -123,3 +124,20 @@ def get_db() -> Session:
 
 def init_db():
     Base.metadata.create_all(bind=engine)
+    _migrate_llama_instances()
+
+
+def _migrate_llama_instances():
+    """補上新欄位（idempotent，可重複執行）"""
+    with engine.connect() as conn:
+        result = conn.execute(text("""
+            SELECT column_name
+            FROM information_schema.columns
+            WHERE table_name = 'llama_instances'
+              AND column_name = 'manually_stopped'
+        """))
+        if result.fetchone() is None:
+            conn.execute(text(
+                "ALTER TABLE llama_instances ADD COLUMN manually_stopped INTEGER NOT NULL DEFAULT 0"
+            ))
+            conn.commit()

@@ -399,20 +399,29 @@ class WhisperCppManager:
             )
             self._active_procs.add(proc)
 
+            async def _drain_stderr():
+                async for raw in proc.stderr:
+                    cluster.log_buffer.append(raw.decode("utf-8", errors="replace").rstrip("\r\n"))
+
+            stderr_task = asyncio.create_task(_drain_stderr())
+
             try:
                 async for raw_line in proc.stdout:
                     line = raw_line.decode("utf-8", errors="replace").rstrip("\r\n")
+                    cluster.log_buffer.append(line)
                     if _is_segment_line(line):
                         yield line
             except (asyncio.CancelledError, GeneratorExit):
                 proc.kill()
                 _mark_job_status(job_id, "failed", "客戶端中斷連線")
                 raise
+            finally:
+                await stderr_task
 
             await proc.wait()
 
             if proc.returncode != 0:
-                stderr_out = (await proc.stderr.read()).decode(errors="replace")[:200]
+                stderr_out = "\n".join(list(cluster.log_buffer)[-5:])
                 await asyncio.to_thread(_mark_job_status, job_id, "failed", stderr_out)
                 raise HTTPException(
                     status_code=502,
