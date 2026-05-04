@@ -161,10 +161,36 @@ async def proxy(path: str, request: Request, key_info: dict = Depends(verify_key
                 except Exception:
                     pass
 
+            got_first_chunk = False
+            INTER_CHUNK_TIMEOUT = 1.0
+
             try:
-                async for chunk in upstream_response.aiter_bytes(chunk_size=None):
-                    _parse_chunk(chunk)
-                    yield chunk
+                aiter = upstream_response.aiter_bytes(chunk_size=None)
+                while True:
+                    chunk_task = asyncio.ensure_future(aiter.__anext__())
+                    disconnect_task = asyncio.ensure_future(request.is_disconnected())
+                    timeout = INTER_CHUNK_TIMEOUT if got_first_chunk else None
+                    try:
+                        done, pending = await asyncio.wait(
+                            [chunk_task, disconnect_task],
+                            return_when=asyncio.FIRST_COMPLETED,
+                            timeout=timeout,
+                        )
+                    finally:
+                        for t in pending:
+                            t.cancel()
+                    if not done:
+                        break
+                    if disconnect_task in done and disconnect_task.result():
+                        break
+                    if chunk_task in done:
+                        try:
+                            chunk = chunk_task.result()
+                        except StopAsyncIteration:
+                            break
+                        _parse_chunk(chunk)
+                        got_first_chunk = True
+                        yield chunk
             finally:
                 await upstream_response.aclose()
                 if should_log:

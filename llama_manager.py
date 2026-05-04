@@ -201,7 +201,7 @@ class LlamaCppManager:
         for cfg in rows:
             state = InstanceState(name=cfg["name"], config=cfg)
             self._instances[cfg["name"]] = state
-            if cfg["auto_start"]:
+            if cfg["auto_start"] and not cfg.get("manually_stopped", 0):
                 await self._start_instance(cfg["name"])
 
     def _atexit_kill_all(self):
@@ -477,6 +477,22 @@ class LlamaCppManager:
         if name not in self._instances:
             raise HTTPException(status_code=404, detail=f"Instance '{name}' not found")
         await self._stop_instance(name, remove=False)
+
+        def _mark_stopped():
+            db = get_db()
+            try:
+                db.query(LlamaCppInstance).filter(LlamaCppInstance.name == name).update(
+                    {"manually_stopped": 1}
+                )
+                db.commit()
+            except Exception:
+                db.rollback()
+                raise
+            finally:
+                db.close()
+
+        await asyncio.to_thread(_mark_stopped)
+        self._instances[name].config["manually_stopped"] = 1
         return _state_to_dict(self._instances[name])
 
     async def delete_instance(self, name: str):
@@ -503,7 +519,23 @@ class LlamaCppManager:
         if name not in self._instances:
             raise HTTPException(status_code=404, detail=f"Instance '{name}' not found")
         await self._stop_instance(name, remove=False)
+
+        def _clear_stopped():
+            db = get_db()
+            try:
+                db.query(LlamaCppInstance).filter(LlamaCppInstance.name == name).update(
+                    {"manually_stopped": 0}
+                )
+                db.commit()
+            except Exception:
+                db.rollback()
+                raise
+            finally:
+                db.close()
+
+        await asyncio.to_thread(_clear_stopped)
         state = self._instances[name]
+        state.config["manually_stopped"] = 0
         state.restart_count = 0
         await self._start_instance(name)
         return _state_to_dict(state)
