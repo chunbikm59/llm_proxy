@@ -28,7 +28,7 @@ async def audio_transcriptions(
     OpenAI 相容的音訊轉錄端點，委派給 WhisperCppManager 處理。
 
     stream=true 時回傳 NDJSON 串流，每行一個 segment：
-        {"text": "[00:00:00.000 --> 00:00:03.500]  辨識文字"}
+        "[00:00:00.000 --> 00:00:03.500]  辨識文字"
     stream=false（預設）時等全部完成後回傳完整結果。
     """
     mgr: WhisperCppManager = request.app.state.whisper_manager
@@ -50,7 +50,7 @@ async def audio_transcriptions(
             agen = mgr.transcribe_stream(audio_bytes, filename, params, cluster_name=cluster, api_key=api_key)
             try:
                 async for segment_line in agen:
-                    yield json.dumps({"text": segment_line}, ensure_ascii=False) + "\n"
+                    yield segment_line + "\n"
             except HTTPException as e:
                 yield json.dumps({"error": e.detail}, ensure_ascii=False) + "\n"
             finally:

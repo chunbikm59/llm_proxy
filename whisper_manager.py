@@ -26,6 +26,11 @@ def _is_wav(data: bytes) -> bool:
     return len(data) >= 12 and data[:4] == b'RIFF' and data[8:12] == b'WAVE'
 
 
+# MP4/MOV container 的 moov atom 通常在檔案末尾，ffmpeg 需要 seek 才能讀取，
+# 透過 pipe:0 無法 seek，必須先寫入臨時檔案。
+_NEEDS_FILE_INPUT = {".mp4", ".m4a", ".mov", ".3gp", ".3g2"}
+
+
 async def _ensure_wav_16k(audio_bytes: bytes, filename: str) -> tuple[bytes, str]:
     """
     若音訊已是 WAV 則直接回傳。
@@ -43,32 +48,49 @@ async def _ensure_wav_16k(audio_bytes: bytes, filename: str) -> tuple[bytes, str
             ),
         )
 
-    cmd = [
-        "ffmpeg",
-        "-hide_banner", "-loglevel", "error",
-        "-i", "pipe:0",
-        "-ar", "16000",
-        "-ac", "1",
-        "-sample_fmt", "s16",
-        "-f", "wav",
-        "pipe:1",
-    ]
+    suffix = Path(filename).suffix.lower()
+    use_file_input = suffix in _NEEDS_FILE_INPUT
+
+    tmp_path: str | None = None
+    if use_file_input:
+        with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as f:
+            f.write(audio_bytes)
+            tmp_path = f.name
 
     try:
-        proc = await asyncio.create_subprocess_exec(
-            *cmd,
-            stdin=asyncio.subprocess.PIPE,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        wav_bytes, stderr_bytes = await asyncio.wait_for(
-            proc.communicate(input=audio_bytes),
-            timeout=120.0,
-        )
-    except asyncio.TimeoutError:
-        raise HTTPException(status_code=504, detail="ffmpeg 音訊轉換逾時（超過 120 秒）")
-    except FileNotFoundError:
-        raise HTTPException(status_code=503, detail="ffmpeg 執行失敗，請確認安裝正確")
+        cmd = [
+            "ffmpeg",
+            "-hide_banner", "-loglevel", "error",
+            "-i", tmp_path if use_file_input else "pipe:0",
+            "-ar", "16000",
+            "-ac", "1",
+            "-sample_fmt", "s16",
+            "-f", "wav",
+            "pipe:1",
+        ]
+
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdin=None if use_file_input else asyncio.subprocess.PIPE,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            wav_bytes, stderr_bytes = await asyncio.wait_for(
+                proc.communicate(input=None if use_file_input else audio_bytes),
+                timeout=120.0,
+            )
+        except asyncio.TimeoutError:
+            raise HTTPException(status_code=504, detail="ffmpeg 音訊轉換逾時（超過 120 秒）")
+        except FileNotFoundError:
+            raise HTTPException(status_code=503, detail="ffmpeg 執行失敗，請確認安裝正確")
+    finally:
+        if tmp_path:
+            import os
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
 
     if proc.returncode != 0:
         err_msg = stderr_bytes.decode("utf-8", errors="replace")[:300]
