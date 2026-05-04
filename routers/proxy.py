@@ -166,22 +166,24 @@ async def proxy(path: str, request: Request, key_info: dict = Depends(verify_key
 
             try:
                 aiter = upstream_response.aiter_bytes(chunk_size=None)
+                chunk_task = asyncio.ensure_future(aiter.__anext__())
                 while True:
-                    chunk_task = asyncio.ensure_future(aiter.__anext__())
                     disconnect_task = asyncio.ensure_future(request.is_disconnected())
                     timeout = INTER_CHUNK_TIMEOUT if got_first_chunk else None
-                    try:
-                        done, pending = await asyncio.wait(
-                            [chunk_task, disconnect_task],
-                            return_when=asyncio.FIRST_COMPLETED,
-                            timeout=timeout,
-                        )
-                    finally:
-                        for t in pending:
-                            t.cancel()
+                    done, _ = await asyncio.wait(
+                        [chunk_task, disconnect_task],
+                        return_when=asyncio.FIRST_COMPLETED,
+                        timeout=timeout,
+                    )
+                    disconnect_task.cancel()
+
                     if not done:
+                        # timeout：chunk 間隔超過 1 秒
+                        chunk_task.cancel()
                         break
                     if disconnect_task in done and disconnect_task.result():
+                        # client 斷線
+                        chunk_task.cancel()
                         break
                     if chunk_task in done:
                         try:
@@ -191,6 +193,7 @@ async def proxy(path: str, request: Request, key_info: dict = Depends(verify_key
                         _parse_chunk(chunk)
                         got_first_chunk = True
                         yield chunk
+                        chunk_task = asyncio.ensure_future(aiter.__anext__())
             finally:
                 await upstream_response.aclose()
                 if should_log:
