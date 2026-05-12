@@ -48,7 +48,7 @@ async def lifespan(app: FastAPI):
 
     # ── 主要 HTTP client ─────────────────────────────────────────────────────
     async with httpx.AsyncClient(
-        timeout=httpx.Timeout(connect=5.0, read=120.0, write=30.0, pool=5.0),
+        timeout=httpx.Timeout(connect=5.0, read=300.0, write=30.0, pool=5.0),
         limits=httpx.Limits(max_connections=20, max_keepalive_connections=10),
     ) as client:
         app.state.http_client = client

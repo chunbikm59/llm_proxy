@@ -224,7 +224,37 @@ async def proxy(path: str, request: Request, key_info: dict = Depends(verify_key
         )
 
     # ── 非 Streaming 路徑 ───────────────────────────────────────────────────
-    upstream = await client.request(method=request.method, url=url, headers=headers, content=body)
+    async def _wait_disconnect():
+        while not await request.is_disconnected():
+            await asyncio.sleep(0.5)
+
+    upstream_task = asyncio.create_task(
+        client.request(method=request.method, url=url, headers=headers, content=body)
+    )
+    disconnect_task = asyncio.create_task(_wait_disconnect())
+
+    done, pending = await asyncio.wait(
+        [upstream_task, disconnect_task],
+        return_when=asyncio.FIRST_COMPLETED,
+    )
+
+    for t in pending:
+        t.cancel()
+        try:
+            await t
+        except (asyncio.CancelledError, Exception):
+            pass
+
+    if disconnect_task in done:
+        return Response(status_code=499)
+
+    try:
+        upstream = upstream_task.result()
+    except httpx.ReadTimeout:
+        return JSONResponse(
+            status_code=504,
+            content={"error": {"message": "Upstream LLM timed out", "type": "timeout_error"}},
+        )
 
     cost = float(upstream.headers.get("x-litellm-response-cost", 0) or 0)
     input_tokens = output_tokens = total_tokens = 0
