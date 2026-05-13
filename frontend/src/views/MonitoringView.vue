@@ -181,7 +181,7 @@ onUnmounted(() => {
                 </div>
               </div>
               <!-- 計數器 -->
-              <div class="grid grid-cols-3 gap-2 text-center">
+              <div class="grid grid-cols-2 gap-2 text-center">
                 <div class="rounded-md bg-muted/50 py-1.5">
                   <p class="text-base font-semibold tabular-nums text-emerald-500">{{ inst.slots.processing }}</p>
                   <p class="text-[10px] text-muted-foreground">推論中</p>
@@ -189,12 +189,6 @@ onUnmounted(() => {
                 <div class="rounded-md bg-muted/50 py-1.5">
                   <p class="text-base font-semibold tabular-nums">{{ inst.slots.idle }}</p>
                   <p class="text-[10px] text-muted-foreground">空閒</p>
-                </div>
-                <div class="rounded-md bg-muted/50 py-1.5">
-                  <p class="text-base font-semibold tabular-nums" :class="inst.slots.queued > 0 ? 'text-amber-500' : ''">
-                    {{ inst.slots.queued }}
-                  </p>
-                  <p class="text-[10px] text-muted-foreground">排隊</p>
                 </div>
               </div>
             </template>

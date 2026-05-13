@@ -74,7 +74,6 @@ export interface LlamaSlotStats {
   total: number
   processing: number
   idle: number
-  queued: number
 }
 
 export interface LlamaSlotDetail {

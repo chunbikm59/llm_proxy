@@ -7,7 +7,7 @@ const UNSTABLE_STATUSES = new Set(['starting', 'restarting'])
 
 export function useLlamaInstances() {
   const instances = ref<LlamaInstance[]>([])
-  const slotMap = ref<Record<number, LlamaSlotInfo>>({})
+  const slotMap = ref<Record<string, LlamaSlotInfo>>({})
   const loading = ref(false)
   const { confirm } = useConfirmDialog()
   let pollTimer: ReturnType<typeof setInterval> | null = null
@@ -31,16 +31,16 @@ export function useLlamaInstances() {
   }
 
   function _applySlots(incoming: LlamaSlotInfo[]) {
-    const next: Record<number, LlamaSlotInfo> = {}
-    for (const s of incoming) next[s.port] = s
-    for (const portStr of Object.keys(next)) {
-      const port = Number(portStr)
-      if (!slotMap.value[port]) {
-        slotMap.value[port] = next[port]
+    const next: Record<string, LlamaSlotInfo> = {}
+    for (const s of incoming) next[s.name] = s
+    for (const name of Object.keys(next)) {
+      if (!slotMap.value[name]) {
+        slotMap.value[name] = next[name]
       } else {
-        const cur = slotMap.value[port]
-        const nxt = next[port]
-        cur.name = nxt.name
+        const cur = slotMap.value[name]
+        const nxt = next[name]
+        cur.host = nxt.host
+        cur.port = nxt.port
         cur.status = nxt.status
         cur.in_flight = nxt.in_flight
         cur.error = nxt.error
@@ -52,8 +52,8 @@ export function useLlamaInstances() {
         }
       }
     }
-    for (const portStr of Object.keys(slotMap.value)) {
-      if (!next[Number(portStr)]) delete slotMap.value[Number(portStr)]
+    for (const name of Object.keys(slotMap.value)) {
+      if (!next[name]) delete slotMap.value[name]
     }
   }
 

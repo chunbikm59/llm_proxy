@@ -152,17 +152,14 @@ function formatTime(iso: string | null): string {
           <TableCell class="text-xs text-muted-foreground">{{ formatTime(inst.started_at) }}</TableCell>
           <TableCell class="text-center">{{ inst.restart_count }}</TableCell>
           <TableCell class="text-center">
-            <template v-if="inst.status === 'running' && slotMap[inst.config.port]?.slots">
+            <template v-if="inst.status === 'running' && slotMap[inst.name]?.slots">
               <button
                 class="tabular-nums text-xs hover:opacity-70 transition-opacity cursor-pointer"
                 :title="expandedSlots.has(inst.name) ? '收起 slot 詳情' : '展開 slot 詳情'"
                 @click="toggleSlots(inst.name)"
               >
-                <span class="text-emerald-500 font-medium">{{ slotMap[inst.config.port]!.slots!.processing }}</span>
-                <span class="text-muted-foreground">/{{ slotMap[inst.config.port]!.slots!.total }}</span>
-                <span v-if="slotMap[inst.config.port]!.slots!.queued > 0" class="ml-1 text-amber-500">
-                  +{{ slotMap[inst.config.port]!.slots!.queued }}
-                </span>
+                <span class="text-emerald-500 font-medium">{{ slotMap[inst.name]!.slots!.processing }}</span>
+                <span class="text-muted-foreground">/{{ slotMap[inst.name]!.slots!.total }}</span>
               </button>
             </template>
             <span v-else class="text-xs text-muted-foreground">—</span>
@@ -227,13 +224,13 @@ function formatTime(iso: string | null): string {
 
         <!-- Slot 詳情展開列 -->
         <TableRow
-          v-if="expandedSlots.has(inst.name) && slotMap[inst.config.port]?.slot_details?.length"
+          v-if="expandedSlots.has(inst.name) && slotMap[inst.name]?.slot_details?.length"
           class="bg-muted/30 hover:bg-muted/30"
         >
           <TableCell :colspan="9" class="py-2 px-4">
             <div class="space-y-1.5">
               <div
-                v-for="(slot, idx) in slotMap[inst.config.port]!.slot_details"
+                v-for="(slot, idx) in slotMap[inst.name]!.slot_details"
                 :key="idx"
                 class="flex items-start gap-3 rounded-md border px-3 py-2 text-xs"
                 :class="slot.is_processing ? 'border-emerald-500/30 bg-emerald-500/5' : 'border-border bg-background'"
@@ -280,8 +277,10 @@ function formatTime(iso: string | null): string {
 
                 <!-- 採樣參數 -->
                 <div v-if="slot.is_processing" class="flex items-center gap-2 shrink-0 text-muted-foreground/70">
-                  <span v-if="slot.temperature != null">temp {{ slot.temperature }}</span>
-                  <span v-if="slot.top_p != null">top_p {{ slot.top_p }}</span>
+                  <span v-if="slot.temperature != null">temp {{ slot.temperature.toFixed(2) }}</span>
+                  <span v-if="slot.top_p != null">top_p {{ slot.top_p.toFixed(2) }}</span>
+                  <span v-if="slot.seed != null">seed {{ slot.seed }}</span>
+                  <span v-if="slot.model" class="font-mono truncate max-w-[12rem]" :title="slot.model">{{ slot.model }}</span>
                 </div>
               </div>
             </div>

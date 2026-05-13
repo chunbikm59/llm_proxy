@@ -121,19 +121,13 @@ async def get_llama_slots(request: Request):
                 continue
             host = inst["config"]["host"]
             port = inst["config"]["port"]
-            # in_flight key 是 model name，從 litellm_config 的 model_name 對應
-            # 直接把整個 in_flight dict 的值加總並附上，讓前端自行選取對應 key
             try:
                 resp = await client.get(f"http://{host}:{port}/slots")
                 resp.raise_for_status()
                 raw_slots = resp.json()
                 processing = sum(1 for s in raw_slots if s.get("is_processing") or s.get("state") == 1)
                 idle = len(raw_slots) - processing
-                # 找與此 instance port 對應的 in_flight：
-                # proxy 以 model name 為 key，這裡用 port 反查所有 in_flight model 的總和
-                # 實際上一個 llama instance 只服務一組 model，取 in_flight 裡 port 相符的 model
                 inst_in_flight = _sum_in_flight_for_port(in_flight, port)
-                queued = max(0, inst_in_flight - processing)
                 slot_details = []
                 for s in raw_slots:
                     params = s.get("params") or {}
@@ -160,7 +154,6 @@ async def get_llama_slots(request: Request):
                         "total": len(raw_slots),
                         "processing": processing,
                         "idle": idle,
-                        "queued": queued,
                     },
                     "slot_details": slot_details,
                     "in_flight": inst_in_flight,
@@ -186,8 +179,6 @@ def _build_port_to_models() -> dict[int, list[str]]:
     mapping: dict[int, list[str]] = {}
     try:
         text = config_path.read_text(encoding="utf-8")
-        # 用簡單的 regex 逐段解析，避免引入 pyyaml 依賴
-        # 找出每個 model 的 model_name 和 api_base port
         blocks = re.split(r'\n  - model_name:', text)
         for block in blocks[1:]:
             name_m = re.match(r'\s*(\S+)', block)
@@ -207,5 +198,4 @@ def _sum_in_flight_for_port(in_flight: dict, port: int) -> int:
     model_names = port_to_models.get(port, [])
     if model_names:
         return sum(in_flight.get(m, 0) for m in model_names)
-    # 找不到對應（port 未在 litellm_config 中）：回傳全部 in_flight 總和
     return sum(in_flight.values())
