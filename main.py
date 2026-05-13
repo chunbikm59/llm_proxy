@@ -54,6 +54,8 @@ async def lifespan(app: FastAPI):
         app.state.http_client = client
         init_db()
 
+        app.state.in_flight: dict[str, int] = {}  # model_name → 進行中請求數
+
         manager = LlamaCppManager()
         app.state.llama_manager = manager
         await manager.startup()

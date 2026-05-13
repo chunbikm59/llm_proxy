@@ -1,5 +1,5 @@
 import { ref, onMounted, onUnmounted } from 'vue'
-import { api, type LlamaInstance, type LlamaInstanceConfig } from '@/api'
+import { api, type LlamaInstance, type LlamaInstanceConfig, type LlamaSlotInfo } from '@/api'
 import { toast } from 'sonner'
 import { useConfirmDialog } from './useConfirmDialog'
 
@@ -7,15 +7,22 @@ const UNSTABLE_STATUSES = new Set(['starting', 'restarting'])
 
 export function useLlamaInstances() {
   const instances = ref<LlamaInstance[]>([])
+  const slotMap = ref<Record<number, LlamaSlotInfo>>({})
   const loading = ref(false)
   const { confirm } = useConfirmDialog()
   let pollTimer: ReturnType<typeof setInterval> | null = null
-  const failedInstances = new Set<string>()  // 追蹤剛失敗的實例
+  const failedInstances = new Set<string>()
 
   async function fetchInstances() {
     loading.value = true
     try {
-      instances.value = await api.listLlamaInstances()
+      const [instList, slotsResp] = await Promise.all([
+        api.listLlamaInstances(),
+        api.getLlamaSlots(),
+      ])
+      // 同一個 tick 寫入，確保 instances 和 slotMap 永遠一致
+      instances.value = instList
+      _applySlots(slotsResp.instances)
     } catch (e: unknown) {
       toast.error(`載入失敗：${(e as Error).message}`)
     } finally {
@@ -23,29 +30,69 @@ export function useLlamaInstances() {
     }
   }
 
+  function _applySlots(incoming: LlamaSlotInfo[]) {
+    const next: Record<number, LlamaSlotInfo> = {}
+    for (const s of incoming) next[s.port] = s
+    for (const portStr of Object.keys(next)) {
+      const port = Number(portStr)
+      if (!slotMap.value[port]) {
+        slotMap.value[port] = next[port]
+      } else {
+        const cur = slotMap.value[port]
+        const nxt = next[port]
+        cur.name = nxt.name
+        cur.status = nxt.status
+        cur.in_flight = nxt.in_flight
+        cur.error = nxt.error
+        // slots 失敗（null）時保留上次的值，避免 processing 期間閃爍為「—」
+        if (nxt.slots) {
+          if (!cur.slots) cur.slots = nxt.slots
+          else Object.assign(cur.slots, nxt.slots)
+          cur.slot_details.splice(0, cur.slot_details.length, ...nxt.slot_details)
+        }
+      }
+    }
+    for (const portStr of Object.keys(slotMap.value)) {
+      if (!next[Number(portStr)]) delete slotMap.value[Number(portStr)]
+    }
+  }
+
   function _hasUnstable() {
     return instances.value.some(i => UNSTABLE_STATUSES.has(i.status))
   }
 
-  // 靜默輪詢（不設 loading）— 只更新狀態，並檢測失敗
+  // 靜默輪詢：instances + slots 同時取得，同一 tick 寫入
   async function _poll() {
-    if (!_hasUnstable()) return
     try {
-      const updated = await api.listLlamaInstances()
+      const shouldPollInstances = _hasUnstable()
+      const [instList, slotsResp] = await Promise.all([
+        shouldPollInstances ? api.listLlamaInstances() : Promise.resolve(null),
+        api.getLlamaSlots(),
+      ])
 
-      // 檢測狀態變化：started/restarting → failed
-      for (const newInst of updated) {
-        const oldInst = instances.value.find(i => i.name === newInst.name)
-        if (oldInst && UNSTABLE_STATUSES.has(oldInst.status) && newInst.status === 'failed') {
-          // 實例剛失敗，顯示錯誤提示
-          if (!failedInstances.has(newInst.name)) {
-            failedInstances.add(newInst.name)
-            toast.error(`實例「${newInst.name}」啟動失敗，請查看日誌了解詳情`)
+      if (instList) {
+        // 檢測狀態變化：starting/restarting → failed
+        for (const newInst of instList) {
+          const oldInst = instances.value.find(i => i.name === newInst.name)
+          if (oldInst && UNSTABLE_STATUSES.has(oldInst.status) && newInst.status === 'failed') {
+            if (!failedInstances.has(newInst.name)) {
+              failedInstances.add(newInst.name)
+              toast.error(`實例「${newInst.name}」啟動失敗，請查看日誌了解詳情`)
+            }
           }
         }
+        // in-place 更新 instances
+        for (const newInst of instList) {
+          const idx = instances.value.findIndex(i => i.name === newInst.name)
+          if (idx !== -1) Object.assign(instances.value[idx], newInst)
+          else instances.value.push(newInst)
+        }
+        const updatedNames = new Set(instList.map(i => i.name))
+        instances.value = instances.value.filter(i => updatedNames.has(i.name))
       }
 
-      instances.value = updated
+      // slots 一定更新（每次 poll 都做）
+      _applySlots(slotsResp.instances)
     } catch {
       // 靜默失敗
     }
@@ -104,7 +151,6 @@ export function useLlamaInstances() {
 
   onMounted(async () => {
     await fetchInstances()
-    // 加快輪詢速度（2 秒），讓失敗狀態更快顯示
     pollTimer = setInterval(_poll, 2000)
   })
 
@@ -112,5 +158,5 @@ export function useLlamaInstances() {
     if (pollTimer) clearInterval(pollTimer)
   })
 
-  return { instances, loading, fetchInstances, stopInstance, restartInstance, deleteInstance, addInstance, updateInstance }
+  return { instances, slotMap, loading, fetchInstances, stopInstance, restartInstance, deleteInstance, addInstance, updateInstance }
 }

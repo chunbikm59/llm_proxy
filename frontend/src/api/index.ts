@@ -70,6 +70,42 @@ export interface LlamaInstanceConfig {
   startup_timeout: number
 }
 
+export interface LlamaSlotStats {
+  total: number
+  processing: number
+  idle: number
+  queued: number
+}
+
+export interface LlamaSlotDetail {
+  id: number | null
+  is_processing: boolean
+  prompt: string
+  n_decoded: number | null
+  n_remain: number | null
+  n_prompt_tokens: number | null
+  temperature: number | null
+  top_p: number | null
+  seed: number | null
+  model: string | null
+}
+
+export interface LlamaSlotInfo {
+  name: string
+  host: string
+  port: number
+  status: string
+  slots: LlamaSlotStats | null
+  slot_details: LlamaSlotDetail[]
+  in_flight: number
+  error: string | null
+}
+
+export interface LlamaSlotsResponse {
+  instances: LlamaSlotInfo[]
+  in_flight: Record<string, number>
+}
+
 export interface LlamaInstance {
   name: string
   status: 'stopped' | 'starting' | 'running' | 'failed' | 'restarting'
@@ -140,6 +176,7 @@ export const api = {
   getUsage: (start: string, end: string) =>
     _fetch<UsageRow[]>(`/admin/keys/usage?start=${start}&end=${end}`),
   getSystemStats: () => _fetch<SystemStats>('/admin/system/stats'),
+  getLlamaSlots: () => _fetch<LlamaSlotsResponse>('/admin/llama/slots'),
   listLlamaInstances: () => _fetch<LlamaInstance[]>('/llama/instances'),
   getLlamaInstance: (name: string) => _fetch<LlamaInstance>(`/llama/instances/${name}`),
   createLlamaInstance: (body: { name: string } & LlamaInstanceConfig) =>

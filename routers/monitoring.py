@@ -1,7 +1,10 @@
 """系統監控路由"""
 import asyncio
+import re
 from datetime import datetime, timezone, timedelta
-from fastapi import APIRouter
+from pathlib import Path
+from fastapi import APIRouter, Request
+import httpx
 
 try:
     import pynvml
@@ -93,3 +96,116 @@ async def system_stats():
             "timestamp": datetime.now(TZ_LOCAL).isoformat(),
         }
     return await asyncio.to_thread(_collect)
+
+
+@router.get("/admin/llama/slots")
+async def get_llama_slots(request: Request):
+    """查詢每個 llama.cpp server 的 slot 推論狀態，並附上 proxy 層的 in-flight 計數"""
+    manager = request.app.state.llama_manager
+    in_flight: dict[str, int] = request.app.state.in_flight
+    instances = manager.list_instances()
+    results = []
+    async with httpx.AsyncClient(timeout=1.5) as client:
+        for inst in instances:
+            if inst["status"] != "running":
+                results.append({
+                    "name": inst["name"],
+                    "host": inst["config"]["host"],
+                    "port": inst["config"]["port"],
+                    "status": inst["status"],
+                    "slots": None,
+                    "slot_details": [],
+                    "in_flight": 0,
+                    "error": None,
+                })
+                continue
+            host = inst["config"]["host"]
+            port = inst["config"]["port"]
+            # in_flight key 是 model name，從 litellm_config 的 model_name 對應
+            # 直接把整個 in_flight dict 的值加總並附上，讓前端自行選取對應 key
+            try:
+                resp = await client.get(f"http://{host}:{port}/slots")
+                resp.raise_for_status()
+                raw_slots = resp.json()
+                processing = sum(1 for s in raw_slots if s.get("is_processing") or s.get("state") == 1)
+                idle = len(raw_slots) - processing
+                # 找與此 instance port 對應的 in_flight：
+                # proxy 以 model name 為 key，這裡用 port 反查所有 in_flight model 的總和
+                # 實際上一個 llama instance 只服務一組 model，取 in_flight 裡 port 相符的 model
+                inst_in_flight = _sum_in_flight_for_port(in_flight, port)
+                queued = max(0, inst_in_flight - processing)
+                slot_details = []
+                for s in raw_slots:
+                    params = s.get("params") or {}
+                    next_token = (s.get("next_token") or [{}])
+                    nt = next_token[0] if next_token else {}
+                    slot_details.append({
+                        "id": s.get("id"),
+                        "is_processing": bool(s.get("is_processing") or s.get("state") == 1),
+                        "prompt": (s.get("prompt") or "")[:200],
+                        "n_decoded": nt.get("n_decoded"),
+                        "n_remain": nt.get("n_remain"),
+                        "n_prompt_tokens": s.get("n_prompt_tokens"),
+                        "temperature": params.get("temperature"),
+                        "top_p": params.get("top_p"),
+                        "seed": params.get("seed"),
+                        "model": s.get("model"),
+                    })
+                results.append({
+                    "name": inst["name"],
+                    "host": host,
+                    "port": port,
+                    "status": inst["status"],
+                    "slots": {
+                        "total": len(raw_slots),
+                        "processing": processing,
+                        "idle": idle,
+                        "queued": queued,
+                    },
+                    "slot_details": slot_details,
+                    "in_flight": inst_in_flight,
+                    "error": None,
+                })
+            except Exception as e:
+                results.append({
+                    "name": inst["name"],
+                    "host": host,
+                    "port": port,
+                    "status": inst["status"],
+                    "slots": None,
+                    "slot_details": [],
+                    "in_flight": 0,
+                    "error": str(e),
+                })
+    return {"instances": results, "in_flight": in_flight}
+
+
+def _build_port_to_models() -> dict[int, list[str]]:
+    """解析 litellm_config.yaml，建立 port → [model_name] 的對應表"""
+    config_path = Path(__file__).parent.parent / "litellm_config.yaml"
+    mapping: dict[int, list[str]] = {}
+    try:
+        text = config_path.read_text(encoding="utf-8")
+        # 用簡單的 regex 逐段解析，避免引入 pyyaml 依賴
+        # 找出每個 model 的 model_name 和 api_base port
+        blocks = re.split(r'\n  - model_name:', text)
+        for block in blocks[1:]:
+            name_m = re.match(r'\s*(\S+)', block)
+            port_m = re.search(r'api_base:\s*http://[^:]+:(\d+)', block)
+            if name_m and port_m:
+                model_name = name_m.group(1)
+                port = int(port_m.group(1))
+                mapping.setdefault(port, []).append(model_name)
+    except Exception:
+        pass
+    return mapping
+
+
+def _sum_in_flight_for_port(in_flight: dict, port: int) -> int:
+    """查詢指定 port 的 llama instance 在 proxy 層有多少進行中請求"""
+    port_to_models = _build_port_to_models()
+    model_names = port_to_models.get(port, [])
+    if model_names:
+        return sum(in_flight.get(m, 0) for m in model_names)
+    # 找不到對應（port 未在 litellm_config 中）：回傳全部 in_flight 總和
+    return sum(in_flight.values())

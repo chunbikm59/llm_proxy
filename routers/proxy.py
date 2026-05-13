@@ -103,6 +103,15 @@ async def proxy(path: str, request: Request, key_info: dict = Depends(verify_key
 
     request_type = "embedding" if path.lower().endswith("embeddings") else "chat"
 
+    # ── In-flight 計數 ───────────────────────────────────────────────────────
+    try:
+        _req_model: str = json.loads(body).get("model") or "" if body else ""
+    except Exception:
+        _req_model = ""
+    _in_flight: dict = request.app.state.in_flight
+    if _req_model:
+        _in_flight[_req_model] = _in_flight.get(_req_model, 0) + 1
+
     # ── Streaming 路徑 ──────────────────────────────────────────────────────
     if is_stream:
         # 注入 stream_options 讓 LiteLLM 在最後附上 usage chunk
@@ -129,6 +138,8 @@ async def proxy(path: str, request: Request, key_info: dict = Depends(verify_key
             stream_model = ""
         if not stream_model:
             await upstream_response.aclose()
+            if _req_model:
+                _in_flight[_req_model] = max(0, _in_flight.get(_req_model, 0) - 1)
             return JSONResponse(status_code=400, content={"error": "missing 'model' field in request body"})
         should_log = upstream_response.status_code < 400
 
@@ -196,6 +207,8 @@ async def proxy(path: str, request: Request, key_info: dict = Depends(verify_key
                         chunk_task = asyncio.ensure_future(aiter.__anext__())
             finally:
                 await upstream_response.aclose()
+                if _req_model:
+                    _in_flight[_req_model] = max(0, _in_flight.get(_req_model, 0) - 1)
                 if should_log:
                     usage = last_usage[0]
                     if usage:
@@ -228,107 +241,111 @@ async def proxy(path: str, request: Request, key_info: dict = Depends(verify_key
         while not await request.is_disconnected():
             await asyncio.sleep(0.5)
 
-    upstream_task = asyncio.create_task(
-        client.request(method=request.method, url=url, headers=headers, content=body)
-    )
-    disconnect_task = asyncio.create_task(_wait_disconnect())
-
-    done, pending = await asyncio.wait(
-        [upstream_task, disconnect_task],
-        return_when=asyncio.FIRST_COMPLETED,
-    )
-
-    for t in pending:
-        t.cancel()
-        try:
-            await t
-        except (asyncio.CancelledError, Exception):
-            pass
-
-    if disconnect_task in done:
-        return Response(status_code=499)
-
     try:
-        upstream = upstream_task.result()
-    except httpx.ReadTimeout:
-        return JSONResponse(
-            status_code=504,
-            content={"error": {"message": "Upstream LLM timed out", "type": "timeout_error"}},
+        upstream_task = asyncio.create_task(
+            client.request(method=request.method, url=url, headers=headers, content=body)
+        )
+        disconnect_task = asyncio.create_task(_wait_disconnect())
+
+        done, pending = await asyncio.wait(
+            [upstream_task, disconnect_task],
+            return_when=asyncio.FIRST_COMPLETED,
         )
 
-    cost = float(upstream.headers.get("x-litellm-response-cost", 0) or 0)
-    input_tokens = output_tokens = total_tokens = 0
-    try:
-        model = json.loads(body).get("model") or ""
-    except Exception:
-        model = ""
-    if not model:
-        return JSONResponse(status_code=400, content={"error": "missing 'model' field in request body"})
+        for t in pending:
+            t.cancel()
+            try:
+                await t
+            except (asyncio.CancelledError, Exception):
+                pass
 
-    # 1. 從 LiteLLM header 讀
-    usage_str = upstream.headers.get("x-litellm-usage", "")
-    if usage_str:
+        if disconnect_task in done:
+            return Response(status_code=499)
+
         try:
-            usage = json.loads(usage_str)
-            input_tokens = usage.get("prompt_tokens", 0)
-            output_tokens = usage.get("completion_tokens", 0)
-            total_tokens = usage.get("total_tokens", 0)
+            upstream = upstream_task.result()
+        except httpx.ReadTimeout:
+            return JSONResponse(
+                status_code=504,
+                content={"error": {"message": "Upstream LLM timed out", "type": "timeout_error"}},
+            )
+
+        cost = float(upstream.headers.get("x-litellm-response-cost", 0) or 0)
+        input_tokens = output_tokens = total_tokens = 0
+        try:
+            model = json.loads(body).get("model") or ""
+        except Exception:
+            model = ""
+        if not model:
+            return JSONResponse(status_code=400, content={"error": "missing 'model' field in request body"})
+
+        # 1. 從 LiteLLM header 讀
+        usage_str = upstream.headers.get("x-litellm-usage", "")
+        if usage_str:
+            try:
+                usage = json.loads(usage_str)
+                input_tokens = usage.get("prompt_tokens", 0)
+                output_tokens = usage.get("completion_tokens", 0)
+                total_tokens = usage.get("total_tokens", 0)
+            except Exception:
+                pass
+
+        # 2. 從 response JSON body 讀（優先，model 名稱可讀）
+        try:
+            resp_json = upstream.json()
+            usage = resp_json.get("usage") or {}
+            if not input_tokens:
+                input_tokens = usage.get("prompt_tokens", 0)
+            if not output_tokens:
+                output_tokens = usage.get("completion_tokens", 0)
+            if not total_tokens:
+                total_tokens = usage.get("total_tokens", 0) or (input_tokens + output_tokens)
         except Exception:
             pass
 
-    # 2. 從 response JSON body 讀（優先，model 名稱可讀）
-    try:
-        resp_json = upstream.json()
-        usage = resp_json.get("usage") or {}
-        if not input_tokens:
-            input_tokens = usage.get("prompt_tokens", 0)
-        if not output_tokens:
-            output_tokens = usage.get("completion_tokens", 0)
-        if not total_tokens:
-            total_tokens = usage.get("total_tokens", 0) or (input_tokens + output_tokens)
-    except Exception:
-        pass
+        # 3. 最終 fallback：用字元比例估算
+        if total_tokens == 0:
+            if request_type == "embedding":
+                try:
+                    req_input = json.loads(body).get("input") or ""
+                    if isinstance(req_input, list):
+                        fallback_text = " ".join(str(s) for s in req_input)
+                    else:
+                        fallback_text = str(req_input)
+                except Exception:
+                    fallback_text = body.decode("utf-8", errors="ignore")
+            else:
+                try:
+                    req_messages = json.loads(body).get("messages") or []
+                    fallback_text = " ".join(m.get("content", "") for m in req_messages if isinstance(m.get("content"), str))
+                except Exception:
+                    fallback_text = body.decode("utf-8", errors="ignore")
+            input_tokens = estimate_tokens(fallback_text)
+            total_tokens = input_tokens
+            print(f"[DEBUG] {request_type} fallback: text='{fallback_text[:50]}...' tokens={input_tokens}", flush=True)
 
-    # 3. 最終 fallback：用字元比例估算
-    if total_tokens == 0:
-        if request_type == "embedding":
-            try:
-                req_input = json.loads(body).get("input") or ""
-                if isinstance(req_input, list):
-                    fallback_text = " ".join(str(s) for s in req_input)
-                else:
-                    fallback_text = str(req_input)
-            except Exception:
-                fallback_text = body.decode("utf-8", errors="ignore")
-        else:
-            try:
-                req_messages = json.loads(body).get("messages") or []
-                fallback_text = " ".join(m.get("content", "") for m in req_messages if isinstance(m.get("content"), str))
-            except Exception:
-                fallback_text = body.decode("utf-8", errors="ignore")
-        input_tokens = estimate_tokens(fallback_text)
-        total_tokens = input_tokens
-        print(f"[DEBUG] {request_type} fallback: text='{fallback_text[:50]}...' tokens={input_tokens}", flush=True)
+        if upstream.status_code < 400:
+            await _log_usage(
+                api_key=key_info["key"],
+                model=model,
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                total_tokens=total_tokens,
+                cost_usd=cost,
+                request_type=request_type,
+            )
 
-    if upstream.status_code < 400:
-        await _log_usage(
-            api_key=key_info["key"],
-            model=model,
-            input_tokens=input_tokens,
-            output_tokens=output_tokens,
-            total_tokens=total_tokens,
-            cost_usd=cost,
-            request_type=request_type,
+        response_headers = {
+            k: v for k, v in upstream.headers.items()
+            if k.lower() not in ("transfer-encoding", "content-encoding")
+        }
+
+        return Response(
+            content=upstream.content,
+            status_code=upstream.status_code,
+            headers=response_headers,
+            media_type=upstream.headers.get("content-type"),
         )
-
-    response_headers = {
-        k: v for k, v in upstream.headers.items()
-        if k.lower() not in ("transfer-encoding", "content-encoding")
-    }
-
-    return Response(
-        content=upstream.content,
-        status_code=upstream.status_code,
-        headers=response_headers,
-        media_type=upstream.headers.get("content-type"),
-    )
+    finally:
+        if _req_model:
+            _in_flight[_req_model] = max(0, _in_flight.get(_req_model, 0) - 1)

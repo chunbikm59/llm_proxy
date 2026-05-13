@@ -12,11 +12,20 @@ import {
 } from '@/components/ui/table'
 import { AlertCircle, RefreshCw, Plus, Square, RotateCcw, ScrollText, Trash2, ServerOff, Pencil, ExternalLink } from 'lucide-vue-next'
 
-const { instances, loading, fetchInstances, stopInstance, restartInstance, deleteInstance, addInstance } =
+const { instances, slotMap, loading, fetchInstances, stopInstance, restartInstance, deleteInstance, addInstance } =
   useLlamaInstances()
 
 const createDialog = ref<InstanceType<typeof CreateInstanceDialog> | null>(null)
 const logsDialog = ref<InstanceType<typeof InstanceLogsDialog> | null>(null)
+
+// 展開的 slot 詳情：instance name
+const expandedSlots = ref<Set<string>>(new Set())
+
+function toggleSlots(name: string) {
+  const s = new Set(expandedSlots.value)
+  s.has(name) ? s.delete(name) : s.add(name)
+  expandedSlots.value = s
+}
 
 function onCreated(instance: LlamaInstance) {
   addInstance(instance)
@@ -99,17 +108,19 @@ function formatTime(iso: string | null): string {
           <TableHead>PID</TableHead>
           <TableHead>啟動時間</TableHead>
           <TableHead>重啟</TableHead>
+          <TableHead class="text-center">推論</TableHead>
           <TableHead class="text-right">操作</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
-        <TableEmpty v-if="instances.length === 0" :colspan="8">
+        <TableEmpty v-if="instances.length === 0" :colspan="9">
           <div class="flex flex-col items-center gap-2 py-4 text-muted-foreground">
             <ServerOff class="h-8 w-8 opacity-25" />
             <p>尚無實例，點擊「新增實例」開始</p>
           </div>
         </TableEmpty>
-        <TableRow v-for="inst in instances" :key="inst.name">
+        <template v-for="inst in instances" :key="inst.name">
+        <TableRow>
           <TableCell class="font-medium">{{ inst.name }}</TableCell>
           <TableCell>
             <div class="flex items-center gap-1.5">
@@ -140,6 +151,22 @@ function formatTime(iso: string | null): string {
           <TableCell class="font-mono text-xs">{{ inst.pid ?? '—' }}</TableCell>
           <TableCell class="text-xs text-muted-foreground">{{ formatTime(inst.started_at) }}</TableCell>
           <TableCell class="text-center">{{ inst.restart_count }}</TableCell>
+          <TableCell class="text-center">
+            <template v-if="inst.status === 'running' && slotMap[inst.config.port]?.slots">
+              <button
+                class="tabular-nums text-xs hover:opacity-70 transition-opacity cursor-pointer"
+                :title="expandedSlots.has(inst.name) ? '收起 slot 詳情' : '展開 slot 詳情'"
+                @click="toggleSlots(inst.name)"
+              >
+                <span class="text-emerald-500 font-medium">{{ slotMap[inst.config.port]!.slots!.processing }}</span>
+                <span class="text-muted-foreground">/{{ slotMap[inst.config.port]!.slots!.total }}</span>
+                <span v-if="slotMap[inst.config.port]!.slots!.queued > 0" class="ml-1 text-amber-500">
+                  +{{ slotMap[inst.config.port]!.slots!.queued }}
+                </span>
+              </button>
+            </template>
+            <span v-else class="text-xs text-muted-foreground">—</span>
+          </TableCell>
           <TableCell class="text-right">
             <div class="flex items-center justify-end gap-1">
               <!-- 停止（運行中才顯示） -->
@@ -197,6 +224,70 @@ function formatTime(iso: string | null): string {
             </div>
           </TableCell>
         </TableRow>
+
+        <!-- Slot 詳情展開列 -->
+        <TableRow
+          v-if="expandedSlots.has(inst.name) && slotMap[inst.config.port]?.slot_details?.length"
+          class="bg-muted/30 hover:bg-muted/30"
+        >
+          <TableCell :colspan="9" class="py-2 px-4">
+            <div class="space-y-1.5">
+              <div
+                v-for="(slot, idx) in slotMap[inst.config.port]!.slot_details"
+                :key="idx"
+                class="flex items-start gap-3 rounded-md border px-3 py-2 text-xs"
+                :class="slot.is_processing ? 'border-emerald-500/30 bg-emerald-500/5' : 'border-border bg-background'"
+              >
+                <!-- Slot ID + 狀態 -->
+                <div class="flex items-center gap-1.5 shrink-0 w-20">
+                  <span
+                    class="inline-block h-2 w-2 rounded-full shrink-0"
+                    :class="slot.is_processing ? 'bg-emerald-500' : 'bg-muted-foreground/30'"
+                  />
+                  <span class="font-mono font-medium">Slot {{ slot.id ?? idx }}</span>
+                </div>
+
+                <!-- 推論進度 -->
+                <template v-if="slot.is_processing">
+                  <!-- prompt processing 階段：n_decoded = 0 -->
+                  <div v-if="!slot.n_decoded" class="flex items-center gap-1.5 shrink-0 text-amber-500">
+                    <svg class="h-3 w-3 animate-spin" viewBox="0 0 24 24" fill="none">
+                      <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+                      <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"/>
+                    </svg>
+                    <span class="text-xs">處理 prompt...</span>
+                    <span v-if="slot.n_prompt_tokens" class="text-xs opacity-70">({{ slot.n_prompt_tokens }} tokens)</span>
+                  </div>
+                  <!-- 生成階段：n_decoded > 0 -->
+                  <div v-else class="flex items-center gap-3 shrink-0">
+                    <span class="text-muted-foreground">
+                      已生成 <span class="tabular-nums font-medium text-foreground">{{ slot.n_decoded }}</span> tokens
+                    </span>
+                    <span v-if="slot.n_remain != null && slot.n_remain >= 0" class="text-muted-foreground">
+                      剩餘 <span class="tabular-nums font-medium text-foreground">{{ slot.n_remain }}</span>
+                    </span>
+                    <span v-if="slot.n_prompt_tokens" class="text-muted-foreground">
+                      prompt <span class="tabular-nums font-medium text-foreground">{{ slot.n_prompt_tokens }}</span> tokens
+                    </span>
+                  </div>
+                </template>
+                <div v-else class="text-muted-foreground/60 shrink-0">空閒</div>
+
+                <!-- Prompt 預覽 -->
+                <div v-if="slot.is_processing && slot.prompt" class="flex-1 min-w-0 font-mono text-muted-foreground truncate" :title="slot.prompt">
+                  {{ slot.prompt }}
+                </div>
+
+                <!-- 採樣參數 -->
+                <div v-if="slot.is_processing" class="flex items-center gap-2 shrink-0 text-muted-foreground/70">
+                  <span v-if="slot.temperature != null">temp {{ slot.temperature }}</span>
+                  <span v-if="slot.top_p != null">top_p {{ slot.top_p }}</span>
+                </div>
+              </div>
+            </div>
+          </TableCell>
+        </TableRow>
+        </template>
       </TableBody>
     </Table>
 
