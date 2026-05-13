@@ -57,41 +57,33 @@ export function useLlamaInstances() {
     }
   }
 
-  function _hasUnstable() {
-    return instances.value.some(i => UNSTABLE_STATUSES.has(i.status))
-  }
-
   // 靜默輪詢：instances + slots 同時取得，同一 tick 寫入
   async function _poll() {
     try {
-      const shouldPollInstances = _hasUnstable()
       const [instList, slotsResp] = await Promise.all([
-        shouldPollInstances ? api.listLlamaInstances() : Promise.resolve(null),
+        api.listLlamaInstances(),
         api.getLlamaSlots(),
       ])
 
-      if (instList) {
-        // 檢測狀態變化：starting/restarting → failed
-        for (const newInst of instList) {
-          const oldInst = instances.value.find(i => i.name === newInst.name)
-          if (oldInst && UNSTABLE_STATUSES.has(oldInst.status) && newInst.status === 'failed') {
-            if (!failedInstances.has(newInst.name)) {
-              failedInstances.add(newInst.name)
-              toast.error(`實例「${newInst.name}」啟動失敗，請查看日誌了解詳情`)
-            }
+      // 檢測狀態變化：starting/restarting → failed
+      for (const newInst of instList) {
+        const oldInst = instances.value.find(i => i.name === newInst.name)
+        if (oldInst && UNSTABLE_STATUSES.has(oldInst.status) && newInst.status === 'failed') {
+          if (!failedInstances.has(newInst.name)) {
+            failedInstances.add(newInst.name)
+            toast.error(`實例「${newInst.name}」啟動失敗，請查看日誌了解詳情`)
           }
         }
-        // in-place 更新 instances
-        for (const newInst of instList) {
-          const idx = instances.value.findIndex(i => i.name === newInst.name)
-          if (idx !== -1) Object.assign(instances.value[idx], newInst)
-          else instances.value.push(newInst)
-        }
-        const updatedNames = new Set(instList.map(i => i.name))
-        instances.value = instances.value.filter(i => updatedNames.has(i.name))
       }
+      // in-place 更新 instances
+      for (const newInst of instList) {
+        const idx = instances.value.findIndex(i => i.name === newInst.name)
+        if (idx !== -1) Object.assign(instances.value[idx], newInst)
+        else instances.value.push(newInst)
+      }
+      const updatedNames = new Set(instList.map(i => i.name))
+      instances.value = instances.value.filter(i => updatedNames.has(i.name))
 
-      // slots 一定更新（每次 poll 都做）
       _applySlots(slotsResp.instances)
     } catch {
       // 靜默失敗
