@@ -1,4 +1,5 @@
 import asyncio
+import re
 import sys
 import shutil
 import tempfile
@@ -164,6 +165,23 @@ def _is_segment_line(line: str) -> bool:
     return True
 
 
+_TIMESTAMP_TEXT_RE = re.compile(
+    r"^\[\d\d:\d\d:\d\d\.\d\d\d\s*-->\s*\d\d:\d\d:\d\d\.\d\d\d\]\s*(.*)$"
+)
+
+# 幻覺循環保護：whisper.cpp 對雜音/靜音段落偶爾會卡在同一句話裡不斷重複輸出。
+# 超過 SOFT 次數後不再往下游傳送重複內容（避免灌爆逐字稿），
+# 超過 HARD 次數則直接視為卡死、中止該次轉錄釋放併發名額。
+_REPEAT_SOFT_LIMIT = 3
+_REPEAT_HARD_LIMIT = 30
+
+
+def _segment_text(line: str) -> str:
+    """從 segment 行擷取時間戳後的文字內容，用來比對是否重複。"""
+    m = _TIMESTAMP_TEXT_RE.match(line.strip())
+    return (m.group(1) if m else line).strip()
+
+
 @dataclass
 class WhisperClusterState:
     name:          str
@@ -212,6 +230,10 @@ def _build_cli_cmd(config: dict, wav_path: str, params: dict) -> list[str]:
         config["executable_path"],
         "--model", config["model_path"],
         "--file",  wav_path,
+        # 不把前一段的轉錄結果當作下一段的 context/prompt：
+        # 一旦某段因雜音/靜音誤判，錯誤文字被餵回去當提示詞會讓模型不斷
+        # 重複同一句話（越滾越大段），這是 whisper.cpp 常見的幻覺循環成因。
+        "--no-context",
     ]
     if config.get("n_threads") is not None:
         cmd += ["--threads", str(config["n_threads"])]
@@ -427,12 +449,39 @@ class WhisperCppManager:
 
             stderr_task = asyncio.create_task(_drain_stderr())
 
+            repeat_text: str | None = None
+            repeat_count = 0
+
             try:
                 async for raw_line in proc.stdout:
                     line = raw_line.decode("utf-8", errors="replace").rstrip("\r\n")
                     cluster.log_buffer.append(line)
-                    if _is_segment_line(line):
-                        yield line
+                    if not _is_segment_line(line):
+                        continue
+
+                    text = _segment_text(line)
+                    if text and text == repeat_text:
+                        repeat_count += 1
+                    else:
+                        repeat_text = text
+                        repeat_count = 1
+
+                    if repeat_count > _REPEAT_HARD_LIMIT:
+                        proc.kill()
+                        _mark_job_status(
+                            job_id, "failed",
+                            f"偵測到同一段文字連續重複超過 {_REPEAT_HARD_LIMIT} 次"
+                            "（疑似 whisper 幻覺循環），已中止轉錄",
+                        )
+                        raise HTTPException(
+                            status_code=502,
+                            detail="whisper-cli 疑似卡入重複輸出循環，已中止轉錄",
+                        )
+
+                    if repeat_count > _REPEAT_SOFT_LIMIT:
+                        continue
+
+                    yield line
             except (asyncio.CancelledError, GeneratorExit):
                 proc.kill()
                 _mark_job_status(job_id, "failed", "客戶端中斷連線")
