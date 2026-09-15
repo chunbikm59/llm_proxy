@@ -230,10 +230,6 @@ def _build_cli_cmd(config: dict, wav_path: str, params: dict) -> list[str]:
         config["executable_path"],
         "--model", config["model_path"],
         "--file",  wav_path,
-        # 不把前一段的轉錄結果當作下一段的 context/prompt：
-        # 一旦某段因雜音/靜音誤判，錯誤文字被餵回去當提示詞會讓模型不斷
-        # 重複同一句話（越滾越大段），這是 whisper.cpp 常見的幻覺循環成因。
-        "--no-context",
     ]
     if config.get("n_threads") is not None:
         cmd += ["--threads", str(config["n_threads"])]
